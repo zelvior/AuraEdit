@@ -1,0 +1,2624 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aura Edit — Advanced Modern Code Editor</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Aura Edit design tokens — exactly five colors, used everywhere -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['"JetBrains Mono"', '"Courier New"', 'Courier', 'monospace'],
+                    },
+                    colors: {
+                        canvas: '#0D0F13',  // Primary Background
+                        surface: '#16191E', // Surface / Cards
+                        muted: '#6B727E',   // Secondary Text
+                        ink: '#E1E4E8',     // Primary Text
+                        accent: '#C5A059',  // Accent
+                    }
+                }
+            }
+        };
+    </script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts: Inter (UI) + JetBrains Mono (code) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <!-- Prism Syntax Highlighting Base -->
+    <link id="prism-theme" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+
+    <style>
+        :root {
+            --c-canvas: #0D0F13;
+            --c-surface: #16191E;
+            --c-muted: #6B727E;
+            --c-ink: #E1E4E8;
+            --c-accent: #C5A059;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+
+        /* Essential overlay editor styling */
+        .editor-container {
+            position: relative;
+            font-family: 'JetBrains Mono', 'Courier New', Courier, monospace;
+        }
+
+        #editing-area, #highlight-pre {
+            margin: 0 !important;
+            padding: 16px !important;
+            border: 0 !important;
+            font-family: 'JetBrains Mono', 'Courier New', Courier, monospace !important;
+            font-size: 14px;
+            line-height: 24px !important;
+            tab-size: 4;
+            -moz-tab-size: 4;
+            white-space: pre !important;
+            word-wrap: normal !important;
+            overflow: auto !important;
+            border-radius: 0 !important;
+            box-sizing: border-box !important;
+        }
+
+        /* Overlay textarea directly on top of the syntax code block */
+        #editing-area {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            color: transparent !important;
+            background: transparent !important;
+            caret-color: var(--c-accent);
+            resize: none;
+            z-index: 2;
+            overflow-x: auto !important;
+            overflow-y: auto !important;
+        }
+
+        #highlight-pre {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            background: transparent !important;
+            z-index: 1;
+            pointer-events: none;
+            overflow: hidden !important; /* Managed by JS scroll syncing */
+        }
+
+        #highlight-code {
+            font-family: 'JetBrains Mono', 'Courier New', Courier, monospace !important;
+            background: transparent !important;
+            font-size: 14px;
+            line-height: 24px !important;
+            display: block;
+            pointer-events: none;
+        }
+
+        /* Hide default scrollbars from highlight pre since textarea handles scrolls */
+        #highlight-pre::-webkit-scrollbar {
+            display: none;
+        }
+
+        /* Smooth adjustments for theme transitions */
+        .transition-theme {
+            transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease;
+        }
+
+        /* Scrollbar design — uses only the Aura palette */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: var(--c-canvas);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: var(--c-surface);
+            border-radius: 4px;
+            border: 1px solid rgba(225, 228, 232, 0.05);
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--c-accent);
+            opacity: 0.6;
+        }
+
+        /* Line numbers sidebar */
+        .line-num-container {
+            font-family: 'JetBrains Mono', 'Courier New', Courier, monospace;
+            font-size: 14px;
+            line-height: 24px;
+            user-select: none;
+            text-align: right;
+            padding-top: 16px;
+            padding-bottom: 16px;
+        }
+
+        /* ---- Prism token overrides: restrict syntax highlighting to the Aura palette ---- */
+        code[class*="language-"], pre[class*="language-"] {
+            color: var(--c-ink) !important;
+            background: transparent !important;
+            text-shadow: none !important;
+            font-family: 'JetBrains Mono', 'Courier New', Courier, monospace !important;
+        }
+        .token.comment,
+        .token.prolog,
+        .token.doctype,
+        .token.cdata,
+        .token.punctuation {
+            color: var(--c-muted) !important;
+        }
+        .token.property,
+        .token.tag,
+        .token.boolean,
+        .token.number,
+        .token.constant,
+        .token.symbol,
+        .token.deleted,
+        .token.function,
+        .token.class-name,
+        .token.selector,
+        .token.attr-name,
+        .token.keyword,
+        .token.operator,
+        .token.entity,
+        .token.url,
+        .token.variable,
+        .language-css .token.string,
+        .style .token.string,
+        .token.builtin,
+        .token.important,
+        .token.atrule {
+            color: var(--c-accent) !important;
+        }
+        .token.selector,
+        .token.attr-name,
+        .token.string,
+        .token.char,
+        .token.inserted,
+        .token.regex {
+            color: var(--c-ink) !important;
+        }
+        .token.bold, .token.important { font-weight: 600; }
+        .token.italic { font-style: italic; }
+    </style>
+</head>
+<body class="h-full flex flex-col transition-theme overflow-hidden bg-canvas text-ink font-sans">
+
+
+    <!-- Top Navigation Header -->
+    <header class="h-14 border-b px-4 flex items-center justify-between z-10 transition-theme border-ink/10 bg-canvas">
+        <div class="flex items-center gap-3">
+            <div class="w-8 h-8 rounded-lg bg-accent flex items-center justify-center text-canvas shadow-md shadow-accent/20">
+                <i class="fa-solid fa-code text-sm"></i>
+            </div>
+            <div>
+                <h1 class="font-bold text-sm tracking-tight text-ink flex items-center gap-2">
+                    Aura Edit
+                    <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-accent/10 text-accent">v1.2.0</span>
+                </h1>
+            </div>
+        </div>
+
+        <!-- Toolbar Actions -->
+        <div class="flex items-center gap-2">
+            <!-- Language Select -->
+            <div class="relative">
+                <label for="language-select" class="sr-only">Language Selector</label>
+                <select id="language-select" class="border rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-accent cursor-pointer transition-colors bg-surface hover:bg-accent/10 border-ink/10">
+                    <option value="javascript">JavaScript</option>
+                    <option value="typescript">TypeScript</option>
+                    <option value="jsx">JSX</option>
+                    <option value="tsx">TSX</option>
+                    <option value="html">HTML</option>
+                    <option value="css">CSS</option>
+                    <option value="scss">SCSS</option>
+                    <option value="less">LESS</option>
+                    <option value="json">JSON</option>
+                    <option value="python">Python</option>
+                    <option value="markup">Markdown</option>
+                    <option value="yaml">YAML</option>
+                    <option value="sql">SQL</option>
+                    <option value="bash">Bash / Shell</option>
+                    <option value="c">C</option>
+                    <option value="cpp">C++</option>
+                    <option value="java">Java</option>
+                    <option value="go">Go</option>
+                    <option value="rust">Rust</option>
+                    <option value="php">PHP</option>
+                    <option value="ruby">Ruby</option>
+                    <option value="csharp">C#</option>
+                    <option value="xml">XML</option>
+                    <option value="plaintext">Plain Text</option>
+                </select>
+            </div>
+
+            <!-- Run Live Preview Button (Shows when executable HTML/CSS/JS is live) -->
+            <button id="btn-run" class="flex items-center gap-1.5 bg-accent hover:bg-accent/90 text-canvas font-semibold text-xs px-3.5 py-1.5 rounded-lg shadow-md shadow-accent/10 transition-all transform hover:-translate-y-0.5 active:translate-y-0">
+                <i class="fa-solid fa-play"></i>
+                <span class="hidden sm:inline">Run Live</span>
+            </button>
+
+            <!-- Export Code -->
+            <button id="btn-download" title="Download File" class="w-8.5 h-8.5 rounded-lg flex items-center justify-center transition-colors bg-surface hover:bg-accent/10">
+                <i class="fa-solid fa-download text-xs text-ink"></i>
+            </button>
+
+            <!-- Settings Trigger -->
+            <button id="btn-settings" title="Editor Preferences" class="w-8.5 h-8.5 rounded-lg flex items-center justify-center transition-colors bg-surface hover:bg-accent/10">
+                <i class="fa-solid fa-sliders text-xs text-ink"></i>
+            </button>
+
+            <!-- Quick Clipboard Copy -->
+            <button id="btn-copy" title="Copy Raw Code" class="w-8.5 h-8.5 rounded-lg flex items-center justify-center transition-colors bg-surface hover:bg-accent/10">
+                <i class="fa-solid fa-copy text-xs text-ink"></i>
+            </button>
+        </div>
+    </header>
+
+    <!-- App Body (Sidebar + Editor Pane + Preview Split Screen) -->
+    <main class="flex-1 flex overflow-hidden relative">
+
+        <!-- Left Sidebar: Project Switcher + File Tree -->
+        <aside id="file-sidebar" class="w-64 border-r flex flex-col transition-all duration-300 ease-in-out shrink-0 z-10 border-ink/10 bg-canvas">
+            <!-- Project Switcher -->
+            <div class="p-2.5 border-b space-y-1.5 border-ink/10 bg-canvas">
+                <div class="flex items-center justify-between">
+                    <span class="text-xs font-bold uppercase tracking-wider text-muted">Project</span>
+                    <button id="btn-toggle-sidebar" class="text-muted hover:text-ink" title="Collapse Explorer">
+                        <i class="fa-solid fa-chevron-left text-xs"></i>
+                    </button>
+                </div>
+                <div class="relative">
+                    <select id="project-select" class="w-full border rounded-lg pl-3 pr-7 py-1.5 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-accent cursor-pointer appearance-none truncate bg-surface border-ink/10"></select>
+                    <i class="fa-solid fa-chevron-down absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] text-muted pointer-events-none"></i>
+                </div>
+                <div class="grid grid-cols-3 gap-1.5">
+                    <button id="btn-new-project" title="New Project" class="flex items-center justify-center gap-1 py-1.5 rounded-lg text-[10px] font-bold transition-colors bg-surface hover:bg-accent/10 text-ink hover:text-accent">
+                        <i class="fa-solid fa-plus text-[10px]"></i> Add
+                    </button>
+                    <button id="btn-rename-project" title="Rename Project" class="flex items-center justify-center gap-1 py-1.5 rounded-lg text-[10px] font-bold transition-colors bg-surface hover:bg-accent/10 text-ink">
+                        <i class="fa-solid fa-pen text-[10px]"></i> Edit
+                    </button>
+                    <button id="btn-delete-project" title="Delete Project" class="flex items-center justify-center gap-1 py-1.5 rounded-lg text-[10px] font-bold hover:text-accent transition-colors bg-surface hover:bg-accent/10 text-ink">
+                        <i class="fa-solid fa-trash text-[10px]"></i> Del
+                    </button>
+                </div>
+            </div>
+
+            <!-- File Tree Toolbar -->
+            <div class="px-2.5 pt-2.5 pb-1.5 flex items-center justify-between">
+                <span class="text-xs font-bold uppercase tracking-wider text-muted">Explorer</span>
+                <div class="flex items-center gap-1">
+                    <button id="btn-new-file" title="New File (root)" class="w-6 h-6 rounded flex items-center justify-center transition-colors hover:bg-surface text-muted">
+                        <i class="fa-regular fa-file text-xs"></i>
+                    </button>
+                    <button id="btn-new-folder" title="New Folder (root)" class="w-6 h-6 rounded flex items-center justify-center transition-colors hover:bg-surface text-muted">
+                        <i class="fa-regular fa-folder text-xs"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- File Tree -->
+            <div class="flex-1 overflow-y-auto px-2 pb-2 space-y-0.5" id="file-tree"></div>
+
+            <!-- Import Sandbox Section -->
+            <div class="p-3.5 border-t space-y-2 border-ink/10">
+                <span class="text-xs font-bold uppercase tracking-wider block text-muted">Import Files</span>
+                <div class="relative group">
+                    <label for="file-upload" class="flex flex-col items-center justify-center w-full h-20 border-2 border-dashed rounded-lg hover:border-accent transition-colors cursor-pointer border-ink/10 hover:bg-accent/10">
+                        <i class="fa-solid fa-cloud-arrow-up text-muted group-hover:text-accent mb-1.5 text-lg"></i>
+                        <span class="text-[10px] font-semibold text-muted">Drag or drop standard code</span>
+                    </label>
+                    <input type="file" id="file-upload" class="hidden" accept=".js,.html,.css,.py,.md,.txt" multiple>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Toggle Button for Collapsed Sidebar -->
+        <button id="btn-show-sidebar" class="absolute left-0 top-1/2 transform -translate-y-1/2 bg-accent text-canvas rounded-r-lg py-3 px-1.5 shadow-md z-20 hidden hover:bg-accent transition-colors">
+            <i class="fa-solid fa-chevron-right text-xs"></i>
+        </button>
+
+        <!-- Main Workspace (Editor Container + Live Preview) -->
+        <section class="flex-1 flex flex-col md:flex-row min-w-0 relative">
+            
+            <!-- CODE EDITOR AREA -->
+            <div class="flex-1 flex flex-col min-w-0 transition-theme h-full bg-canvas">
+                <div class="flex items-center justify-between px-4 py-2 border-b transition-theme text-xs font-medium bg-canvas border-ink/10">
+                    <div class="flex items-center gap-2">
+                        <span class="w-2.5 h-2.5 rounded-full bg-accent animate-pulse"></span>
+                        <span id="active-filename" class="font-semibold text-ink">algorithms.js</span>
+                    </div>
+                    <div class="flex items-center gap-3 text-muted">
+                        <span id="line-col-counter">Ln 1, Col 1</span>
+                        <span id="char-counter">0 chars</span>
+                    </div>
+                </div>
+
+                <!-- Editor Workspace container -->
+                <div class="flex-1 flex overflow-hidden relative">
+                    <!-- Line Numbers Column -->
+                    <div class="line-num-container w-14 border-r select-none overflow-hidden transition-theme border-ink/10 bg-canvas text-muted" id="line-numbers">
+                        <div>1</div>
+                    </div>
+
+                    <!-- Input / Display Overlay Grid -->
+                    <div class="flex-1 h-full relative editor-container overflow-hidden">
+                        <!-- Highlighting container (Matches scrolling) -->
+                        <pre id="highlight-pre" class="h-full w-full pointer-events-none transition-theme"><code id="highlight-code" class="language-javascript"></code></pre>
+                        
+                        <!-- Typing Area (Overlays identical coordinates) -->
+                        <textarea id="editing-area" spellcheck="false" class="transition-theme" placeholder="Write code here..."></textarea>
+                    </div>
+                </div>
+            </div>
+
+            <!-- COLLAPSIBLE PREVIEW PANEL / SANDBOX -->
+            <div id="preview-panel" class="w-full md:w-[45%] border-t md:border-t-0 md:border-l flex flex-col h-1/2 md:h-full transition-all duration-300 border-ink/10 bg-canvas">
+                <div class="h-10 px-4 border-b flex items-center justify-between text-xs font-semibold shrink-0 gap-2 bg-canvas border-ink/10 text-ink">
+                    <div class="flex items-center gap-2 min-w-0">
+                        <i class="fa-solid fa-laptop-code text-accent"></i>
+                        <span class="shrink-0">Live Preview</span>
+                        <span id="preview-mode-badge" class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-accent/10 truncate text-accent">project</span>
+                    </div>
+                    <div class="flex items-center gap-2 shrink-0">
+                        <button id="btn-refresh-preview" title="Refresh Live State" class="w-6 h-6 rounded flex items-center justify-center transition-colors hover:bg-surface">
+                            <i class="fa-solid fa-arrows-rotate"></i>
+                        </button>
+                        <button id="btn-toggle-preview" class="w-6 h-6 rounded flex items-center justify-center transition-colors hover:bg-surface" title="Close Preview">
+                            <i class="fa-solid fa-xmark"></i>
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Sandboxed Output iframe -->
+                <div class="flex-1 bg-canvas relative">
+                    <iframe id="live-iframe" class="w-full h-full border-none" sandbox="allow-scripts allow-modals"></iframe>
+                    <div id="iframe-loader" class="absolute inset-0 flex flex-col items-center justify-center gap-2 hidden bg-canvas/95">
+                        <div class="w-8 h-8 rounded-full border-2 border-surface border-t-accent animate-spin"></div>
+                        <span class="text-xs font-semibold text-muted">Updating live Sandbox...</span>
+                    </div>
+                </div>
+
+                <!-- Live Virtual Sandbox Terminal Console Output -->
+                <div class="h-40 border-t bg-canvas flex flex-col text-[13px] font-mono overflow-hidden border-ink/10">
+                    <div class="h-8 px-3 bg-canvas border-b border-ink/10 flex items-center justify-between text-[11px] font-bold tracking-wider text-muted select-none uppercase">
+                        <span>Console Output</span>
+                        <button id="btn-clear-console" class="hover:text-ink transition-colors">Clear</button>
+                    </div>
+                    <div id="virtual-console" class="flex-1 p-3 overflow-y-auto space-y-1.5 text-ink select-text selection:bg-accent/20">
+                        <div class="text-muted italic">No output received. Press 'Run Live' to launch script console logs...</div>
+                    </div>
+                </div>
+            </div>
+            
+        </section>
+    </main>
+
+    <!-- SETTINGS DRAWER OVERLAY -->
+    <div id="settings-drawer" class="fixed inset-0 bg-canvas/40 backdrop-blur-sm z-50 flex justify-end transform translate-x-full transition-transform duration-300">
+        <div class="w-80 h-full p-6 shadow-2xl flex flex-col justify-between border-l bg-canvas border-ink/10">
+            <div class="space-y-6">
+                <div class="flex items-center justify-between pb-4 border-b border-ink/10">
+                    <h3 class="font-bold text-md text-ink">Preferences</h3>
+                    <button id="btn-close-settings" class="text-muted hover:text-ink">
+                        <i class="fa-solid fa-xmark text-lg"></i>
+                    </button>
+                </div>
+
+                <!-- Editor Setup Elements -->
+                <div class="space-y-4">
+                    <!-- Font size controls -->
+                    <div class="space-y-1.5">
+                        <label for="font-size-control" class="text-xs font-bold text-muted uppercase">Editor Font Size</label>
+                        <div class="flex items-center gap-2">
+                            <input type="range" id="font-size-control" min="12" max="22" step="1" value="14" class="w-full accent-[#C5A059] cursor-pointer">
+                            <span id="font-size-display" class="text-xs font-mono font-bold px-2 py-1 rounded bg-surface">14px</span>
+                        </div>
+                    </div>
+
+                    <!-- Indent Spaces -->
+                    <div class="space-y-1.5">
+                        <label for="tab-size-control" class="text-xs font-bold text-muted uppercase block">Tab/Indent Size</label>
+                        <select id="tab-size-control" class="w-full border rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-accent cursor-pointer bg-surface border-ink/10">
+                            <option value="2">2 Spaces</option>
+                            <option value="4" selected>4 Spaces</option>
+                            <option value="8">8 Spaces</option>
+                        </select>
+                    </div>
+
+                    <!-- Auto close toggles -->
+                    <div class="flex items-center justify-between py-2 border-t border-b border-ink/10">
+                        <span class="text-xs font-semibold text-ink">Auto-close Brackets</span>
+                        <label class="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" id="toggle-autoclose" class="sr-only peer" checked>
+                            <span class="w-9 h-5 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-accent after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-ink after:border-accent/30 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-accent bg-accent/10"></span>
+                        </label>
+                    </div>
+
+                    <!-- Auto save -->
+                    <div class="flex items-center justify-between py-2 border-b border-ink/10">
+                        <span class="text-xs font-semibold text-ink">Autosave Locally</span>
+                        <label class="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" id="toggle-autosave" class="sr-only peer" checked>
+                            <span class="w-9 h-5 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-accent after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-ink after:border-accent/30 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-accent bg-accent/10"></span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="pt-6 border-t border-ink/10">
+                <button id="btn-reset-preferences" class="w-full text-center py-2 rounded-lg text-xs font-bold transition-colors bg-surface hover:bg-accent/10 text-ink">
+                    Reset defaults
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- CUSTOM FLOATING TOAST CONTAINER (No raw browser alert popups) -->
+    <div id="toast-container" class="fixed bottom-6 right-6 space-y-2 z-50 pointer-events-none"></div>
+
+    <!-- Context Menu for File Tree -->
+    <div id="context-menu" class="hidden fixed z-[60] border rounded-lg shadow-2xl py-1 min-w-[160px] text-xs font-semibold bg-canvas border-ink/10 text-ink">
+        <button data-action="new-file" class="ctx-item w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-surface"><i class="fa-regular fa-file w-3.5"></i> New File</button>
+        <button data-action="new-folder" class="ctx-item w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-surface"><i class="fa-regular fa-folder w-3.5"></i> New Folder</button>
+        <div class="border-t my-1 border-ink/10"></div>
+        <button data-action="rename" class="ctx-item w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-surface"><i class="fa-solid fa-pen w-3.5"></i> Rename</button>
+        <button data-action="delete" class="ctx-item w-full text-left px-3 py-2 text-accent flex items-center gap-2 hover:bg-accent/10"><i class="fa-solid fa-trash w-3.5"></i> Delete</button>
+    </div>
+
+    <!-- Generic Prompt Modal (for naming files/folders/projects) -->
+    <div id="prompt-modal" class="hidden fixed inset-0 bg-canvas/40 backdrop-blur-sm z-[70] flex items-center justify-center p-4">
+        <div class="w-full max-w-sm rounded-xl shadow-2xl border p-5 space-y-4 bg-canvas border-ink/10">
+            <h3 id="prompt-modal-title" class="font-bold text-sm text-ink">Enter a name</h3>
+            <input id="prompt-modal-input" type="text" class="w-full border rounded-lg px-3 py-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-accent bg-surface border-ink/10" />
+            <div class="flex justify-end gap-2">
+                <button id="prompt-modal-cancel" class="px-3.5 py-1.5 rounded-lg text-xs font-bold bg-surface hover:bg-accent/10 text-ink">Cancel</button>
+                <button id="prompt-modal-confirm" class="px-3.5 py-1.5 rounded-lg text-xs font-bold bg-accent hover:bg-accent/90 text-canvas">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Confirm Modal (for destructive actions) -->
+    <div id="confirm-modal" class="hidden fixed inset-0 bg-canvas/40 backdrop-blur-sm z-[70] flex items-center justify-center p-4">
+        <div class="w-full max-w-sm rounded-xl shadow-2xl border p-5 space-y-4 bg-canvas border-ink/10">
+            <h3 id="confirm-modal-title" class="font-bold text-sm text-ink">Are you sure?</h3>
+            <p id="confirm-modal-body" class="text-xs text-muted"></p>
+            <div class="flex justify-end gap-2">
+                <button id="confirm-modal-cancel" class="px-3.5 py-1.5 rounded-lg text-xs font-bold bg-surface hover:bg-accent/10 text-ink">Cancel</button>
+                <button id="confirm-modal-confirm" class="px-3.5 py-1.5 rounded-lg text-xs font-bold bg-accent hover:bg-accent/90 text-canvas">Delete</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Prism Highlighting core bundle library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-clike.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-markup.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-javascript.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-css.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-css-extras.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-scss.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-less.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-typescript.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-jsx.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-tsx.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-markdown.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-json.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-yaml.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-sql.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-c.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-cpp.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-java.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-go.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-rust.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-php.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-ruby.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-csharp.min.js"></script>
+    <!-- Babel standalone for TS/JSX/TSX live transpilation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+
+    <!-- Native App Core Logic -->
+    <script>
+        // ============================== TEMPLATE CODES ==============================
+        const TEMPLATE_CODES = {
+            javascript: `// Aura Edit Algorithms Sandbox\n// Press "Run Live" to evaluate this script directly inside the sandbox.\n\nfunction getFibonacci(number) {\n    if (number <= 0) return [];\n    if (number === 1) return [0];\n    \n    const sequence = [0, 1];\n    while (sequence.length < number) {\n        const nextTerm = sequence[sequence.length - 1] + sequence[sequence.length - 2];\n        sequence.push(nextTerm);\n    }\n    return sequence;\n}\n\n// Generate sequence\nconst resultTerms = 12;\nconst fibSequence = getFibonacci(resultTerms);\n\nconsole.log("Calculated terms:", resultTerms);\nconsole.log("Aura Output:", fibSequence.join(" -> "));`,
+
+            html: `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Aura Live Canvas Preview</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #0D0F13, #16191E);
+            color: #E1E4E8;
+            height: 100vh;
+            margin: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+        .card {
+            background: rgba(225, 228, 232, 0.05);
+            backdrop-filter: blur(16px);
+            border: 1px solid rgba(225, 228, 232, 0.12);
+            padding: 2.5rem;
+            border-radius: 24px;
+            text-align: center;
+            box-shadow: 0 20px 50px rgba(13,15,19,0.5);
+            max-width: 380px;
+            transform: scale(0.95);
+            animation: popUp 1s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+        @keyframes popUp {
+            to { transform: scale(1); opacity: 1; }
+        }
+        h1 { margin: 0 0 10px; font-size: 2rem; color: #C5A059; }
+        p { margin: 0 0 20px; font-size: 0.95rem; line-height: 1.6; color: #6B727E; }
+        button {
+            background: #C5A059;
+            color: #0D0F13;
+            border: none;
+            padding: 12px 24px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: transform 0.2s, background 0.2s;
+        }
+        button:hover { filter: brightness(0.9); transform: translateY(-2px); }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>Welcome to Aura!</h1>
+        <p>This is a live responsive sandboxed DOM. Edit this template and view your real-time adjustments here instantly.</p>
+        <button onclick="greetUser()">Interactive Action</button>
+    </div>
+
+    <script>
+        function greetUser() {
+            console.log("Interactive button pressed in Live Preview.");
+            alert("Aura sandboxed action triggered successfully!");
+        }
+    <\/script>
+</body>
+</html>`,
+
+            css: `/* Aura Edit CSS Sandbox Preset - Modern Glowing Keyframes */\n\nbody {\n    display: grid;\n    place-items: center;\n    min-height: 100vh;\n    background-color: #0D0F13;\n    margin: 0;\n}\n\n.glowing-element {\n    position: relative;\n    width: 140px;\n    height: 140px;\n    background: radial-gradient(circle, #C5A059 0%, #16191E 100%);\n    border-radius: 50px;\n    animation: rotate 4s linear infinite;\n    box-shadow: 0 0 40px rgba(197, 160, 89, 0.4);\n}\n\n@keyframes rotate {\n    from { transform: rotate(0deg) scale(1); }\n    50% { transform: rotate(180deg) scale(1.1); }\n    to { transform: rotate(360deg) scale(1); }\n}`,
+
+            python: `# Divide & Conquer Binary Search\n# Highly optimized Python implementation\n\ndef binary_search(array, target):\n    low = 0\n    high = len(array) - 1\n    \n    while low <= high:\n        mid = (low + high) // 2\n        guess = array[mid]\n        \n        if guess == target:\n            return mid\n        if guess > target:\n            high = mid - 1\n        else:\n            low = mid + 1\n    return -1\n\n# Execution sequence\nsorted_primes = [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37]\ntarget_value = 23\n\nlocation_index = binary_search(sorted_primes, target_value)\nprint(f"Index position of {target_value} in dataset: {location_index}")`,
+
+            markdown: `# 🌌 Aura Edit IDE Guide\n\nWelcome to your supercharged in-browser development suite. Aura supports multiple syntax standards, auto-scrolling line synchronization, custom theme profiles, and responsive sandboxing.\n\n### Key Ecosystem Attributes\n\n- **Live Previews**: Build static pages with instant preview outputs.\n- **Console Virtualization**: Debug scripting loops naturally using the internal terminal log collector.\n- **Keyboard Interventions**: Integrated automatic spacing, smart indents, brackets, and quotes.\n- **Responsive Panels**: Fold, scale, and access elements with comfort on both mobile and widescreen devices.`,
+
+            typescript: `// TypeScript Sandbox - transpiled live via Babel\n\ninterface Point {\n    x: number;\n    y: number;\n}\n\nfunction distance(a: Point, b: Point): number {\n    const dx = a.x - b.x;\n    const dy = a.y - b.y;\n    return Math.sqrt(dx * dx + dy * dy);\n}\n\nconst p1: Point = { x: 0, y: 0 };\nconst p2: Point = { x: 3, y: 4 };\n\nconsole.log("Distance:", distance(p1, p2));`,
+
+            jsx: `// JSX Sandbox - transpiled live via Babel + React\n\nfunction App() {\n    const [count, setCount] = React.useState(0);\n    return (\n        <div style={{ fontFamily: 'sans-serif', padding: 20, color: '#E1E4E8' }}>\n            <h2>Aura JSX Sandbox</h2>\n            <p>Count: {count}</p>\n            <button onClick={() => setCount(count + 1)} style={{ padding: '8px 16px', borderRadius: 8, background: '#C5A059', color: '#0D0F13', border: 'none' }}>\n                Increment\n            </button>\n        </div>\n    );\n}\n\nconst root = ReactDOM.createRoot(document.getElementById('root'));\nroot.render(<App />);`,
+
+            tsx: `// TSX Sandbox - transpiled live via Babel + React\n\ninterface CounterProps {\n    label: string;\n}\n\nfunction Counter({ label }: CounterProps) {\n    const [count, setCount] = React.useState<number>(0);\n    return (\n        <div style={{ fontFamily: 'sans-serif', padding: 20, color: '#E1E4E8' }}>\n            <h2>{label}</h2>\n            <p>Count: {count}</p>\n            <button onClick={() => setCount(count + 1)} style={{ padding: '8px 16px', borderRadius: 8, background: '#C5A059', color: '#0D0F13', border: 'none' }}>\n                Increment\n            </button>\n        </div>\n    );\n}\n\nconst root = ReactDOM.createRoot(document.getElementById('root'));\nroot.render(<Counter label="Aura TSX Sandbox" />);`,
+
+            scss: `// SCSS Sandbox - flattened & previewed live (best-effort, no external deps)\n\n$primary: #C5A059;\n$radius: 16px;\n\n.glow-card {\n    background: radial-gradient(circle, $primary 0%, #16191E 100%);\n    border-radius: $radius;\n    width: 160px;\n    height: 160px;\n    margin: 40px auto;\n    box-shadow: 0 0 40px rgba(197, 160, 89, 0.4);\n\n    &:hover {\n        transform: scale(1.05);\n    }\n}`,
+
+            less: `// LESS Sandbox - flattened & previewed live (best-effort, no external deps)\n\n@primary: #C5A059;\n@radius: 16px;\n\n.glow-card {\n    background: radial-gradient(circle, @primary 0%, #16191E 100%);\n    border-radius: @radius;\n    width: 160px;\n    height: 160px;\n    margin: 40px auto;\n    box-shadow: 0 0 40px rgba(197, 160, 89, 0.4);\n\n    &:hover {\n        transform: scale(1.05);\n    }\n}`,
+
+            json: `{\n  "name": "aura-edit-project",\n  "version": "1.0.0",\n  "description": "A multi-file, multi-language sandbox project",\n  "tags": ["editor", "sandbox", "ide"],\n  "config": {\n    "theme": "aura-dark",\n    "autosave": true\n  }\n}`,
+
+            yaml: `# YAML Sandbox - parsed & validated live\nname: aura-edit-project\nversion: 1.0.0\nfeatures:\n  - file-tree\n  - multi-project\n  - indexeddb-persistence\nconfig:\n  theme: aura-dark\n  autosave: true`,
+
+            sql: `-- SQL Sandbox - executed live against an in-memory SQLite database\n\nCREATE TABLE users (\n    id INTEGER PRIMARY KEY,\n    name TEXT NOT NULL,\n    role TEXT\n);\n\nINSERT INTO users (name, role) VALUES\n    ('Ava', 'admin'),\n    ('Liam', 'editor'),\n    ('Noor', 'viewer');\n\nSELECT * FROM users ORDER BY name;`,
+
+            bash: `#!/usr/bin/env bash\n# Aura Edit shell script preview (syntax-highlighted, not executed)\n\nset -euo pipefail\n\nfor file in src/*.js; do\n    echo "Linting $file..."\ndone\n\necho "Done!"`,
+
+            c: `#include <stdio.h>\n\nint main(void) {\n    printf("Hello from Aura Edit (C preview)\\n");\n    return 0;\n}`,
+
+            cpp: `#include <iostream>\n\nint main() {\n    std::cout << "Hello from Aura Edit (C++ preview)" << std::endl;\n    return 0;\n}`,
+
+            java: `public class Main {\n    public static void main(String[] args) {\n        System.out.println("Hello from Aura Edit (Java preview)");\n    }\n}`,
+
+            go: `package main\n\nimport "fmt"\n\nfunc main() {\n    fmt.Println("Hello from Aura Edit (Go preview)")\n}`,
+
+            rust: `fn main() {\n    println!("Hello from Aura Edit (Rust preview)");\n}`,
+
+            php: `<?php\n\necho "Hello from Aura Edit (PHP preview)\\n";\n`,
+
+            ruby: `puts "Hello from Aura Edit (Ruby preview)"`,
+
+            csharp: `using System;\n\nclass Program {\n    static void Main() {\n        Console.WriteLine("Hello from Aura Edit (C# preview)");\n    }\n}`,
+
+            xml: `<?xml version="1.0" encoding="UTF-8"?>\n<project>\n    <name>Aura Edit</name>\n    <feature>file-tree</feature>\n    <feature>multi-project</feature>\n    <feature>indexeddb</feature>\n</project>`,
+
+            plaintext: `Aura Edit plain text file.\n\nUse the language selector to switch syntax highlighting and live preview mode for this file.`
+        };
+
+        // ============================== DOM ELEMENTS ==============================
+        const editingArea = document.getElementById('editing-area');
+        const highlightPre = document.getElementById('highlight-pre');
+        const highlightCode = document.getElementById('highlight-code');
+        const lineNumbers = document.getElementById('line-numbers');
+        const languageSelect = document.getElementById('language-select');
+        const activeFilename = document.getElementById('active-filename');
+        const lineColCounter = document.getElementById('line-col-counter');
+        const charCounter = document.getElementById('char-counter');
+        const btnRun = document.getElementById('btn-run');
+        const btnDownload = document.getElementById('btn-download');
+        const btnCopy = document.getElementById('btn-copy');
+        const fileSidebar = document.getElementById('file-sidebar');
+        const btnToggleSidebar = document.getElementById('btn-toggle-sidebar');
+        const btnShowSidebar = document.getElementById('btn-show-sidebar');
+        const liveIframe = document.getElementById('live-iframe');
+        const iframeLoader = document.getElementById('iframe-loader');
+        const previewPanel = document.getElementById('preview-panel');
+        const btnTogglePreview = document.getElementById('btn-toggle-preview');
+        const btnRefreshPreview = document.getElementById('btn-refresh-preview');
+        const btnClearConsole = document.getElementById('btn-clear-console');
+        const virtualConsole = document.getElementById('virtual-console');
+        const fileUploadInput = document.getElementById('file-upload');
+        const toastContainer = document.getElementById('toast-container');
+
+        // Project/File tree elements
+        const projectSelect = document.getElementById('project-select');
+        const btnNewProject = document.getElementById('btn-new-project');
+        const btnRenameProject = document.getElementById('btn-rename-project');
+        const btnDeleteProject = document.getElementById('btn-delete-project');
+        const btnNewFile = document.getElementById('btn-new-file');
+        const btnNewFolder = document.getElementById('btn-new-folder');
+        const fileTreeEl = document.getElementById('file-tree');
+        const contextMenu = document.getElementById('context-menu');
+
+        // Modal elements
+        const promptModal = document.getElementById('prompt-modal');
+        const promptModalTitle = document.getElementById('prompt-modal-title');
+        const promptModalInput = document.getElementById('prompt-modal-input');
+        const promptModalCancel = document.getElementById('prompt-modal-cancel');
+        const promptModalConfirm = document.getElementById('prompt-modal-confirm');
+        const confirmModal = document.getElementById('confirm-modal');
+        const confirmModalTitle = document.getElementById('confirm-modal-title');
+        const confirmModalBody = document.getElementById('confirm-modal-body');
+        const confirmModalCancel = document.getElementById('confirm-modal-cancel');
+        const confirmModalConfirm = document.getElementById('confirm-modal-confirm');
+
+        // Settings elements
+        const btnSettings = document.getElementById('btn-settings');
+        const btnCloseSettings = document.getElementById('btn-close-settings');
+        const settingsDrawer = document.getElementById('settings-drawer');
+        const fontSizeControl = document.getElementById('font-size-control');
+        const fontSizeDisplay = document.getElementById('font-size-display');
+        const tabSizeControl = document.getElementById('tab-size-control');
+        const toggleAutoclose = document.getElementById('toggle-autoclose');
+        const toggleAutosave = document.getElementById('toggle-autosave');
+        const btnResetPreferences = document.getElementById('btn-reset-preferences');
+
+        // ============================== STATE ==============================
+        let autosaveEnabled = true;
+        let autocloseEnabled = true;
+        let tabSpaces = 4;
+        let editorFontSize = 14;
+
+        let projects = [];          // [{id, name, createdAt}]
+        let currentProjectId = null;
+        let fileTree = null;        // root folder node for current project
+        let openFile = null;        // {id, path-resolved node reference}
+        let expandedFolders = new Set();
+        let saveDebounceTimer = null;
+        let ctxTargetNodeId = null;
+        let ctxTargetProjectRoot = false;
+
+        const LANG_BY_EXT = {
+            js: 'javascript', mjs: 'javascript', cjs: 'javascript',
+            ts: 'typescript', mts: 'typescript', cts: 'typescript',
+            jsx: 'jsx', tsx: 'tsx',
+            html: 'html', htm: 'html',
+            css: 'css', scss: 'scss', sass: 'scss', less: 'less',
+            json: 'json', json5: 'json', webmanifest: 'json',
+            py: 'python', pyw: 'python',
+            md: 'markup', markdown: 'markup',
+            yml: 'yaml', yaml: 'yaml',
+            sql: 'sql',
+            sh: 'bash', bash: 'bash', zsh: 'bash',
+            c: 'c', h: 'c',
+            cpp: 'cpp', cc: 'cpp', cxx: 'cpp', hpp: 'cpp',
+            java: 'java',
+            go: 'go',
+            rs: 'rust',
+            php: 'php',
+            rb: 'ruby',
+            cs: 'csharp',
+            xml: 'xml', svg: 'xml',
+            txt: 'plaintext', env: 'plaintext', log: 'plaintext'
+        };
+
+        // Maps internal "lang" id -> Prism CSS class
+        const PRISM_LANG_MAP = {
+            javascript: 'language-javascript',
+            typescript: 'language-typescript',
+            jsx: 'language-jsx',
+            tsx: 'language-tsx',
+            html: 'language-html',
+            css: 'language-css',
+            scss: 'language-scss',
+            less: 'language-less',
+            json: 'language-json',
+            python: 'language-python',
+            markup: 'language-markdown',
+            yaml: 'language-yaml',
+            sql: 'language-sql',
+            bash: 'language-bash',
+            c: 'language-c',
+            cpp: 'language-cpp',
+            java: 'language-java',
+            go: 'language-go',
+            rust: 'language-rust',
+            php: 'language-php',
+            ruby: 'language-ruby',
+            csharp: 'language-csharp',
+            xml: 'language-markup',
+            plaintext: 'language-none'
+        };
+
+        // File explorer icon badges per language — unified accent treatment, differentiated by glyph
+        const FILE_ICONS = {
+            javascript: { cls: 'bg-accent/10 text-accent', icon: 'JS', fa: false },
+            typescript: { cls: 'bg-accent/10 text-accent', icon: 'TS', fa: false },
+            jsx: { cls: 'bg-accent/10 text-accent', icon: 'fa-brands fa-react', fa: true },
+            tsx: { cls: 'bg-accent/10 text-accent', icon: 'fa-brands fa-react', fa: true },
+            html: { cls: 'bg-accent/10 text-accent', icon: 'fa-brands fa-html5', fa: true },
+            css: { cls: 'bg-accent/10 text-accent', icon: 'fa-brands fa-css3-alt', fa: true },
+            scss: { cls: 'bg-accent/10 text-accent', icon: 'fa-brands fa-sass', fa: true },
+            less: { cls: 'bg-accent/10 text-accent', icon: 'fa-brands fa-less', fa: true },
+            json: { cls: 'bg-accent/10 text-accent', icon: '{ }', fa: false },
+            python: { cls: 'bg-accent/10 text-accent', icon: 'fa-brands fa-python', fa: true },
+            markup: { cls: 'bg-accent/10 text-accent', icon: 'fa-regular fa-file-lines', fa: true },
+            yaml: { cls: 'bg-accent/10 text-accent', icon: 'fa-regular fa-file-code', fa: true },
+            sql: { cls: 'bg-accent/10 text-accent', icon: 'fa-solid fa-database', fa: true },
+            bash: { cls: 'bg-accent/10 text-accent', icon: 'fa-solid fa-terminal', fa: true },
+            c: { cls: 'bg-accent/10 text-accent', icon: 'C', fa: false },
+            cpp: { cls: 'bg-accent/10 text-accent', icon: 'fa-solid fa-plus', fa: true },
+            java: { cls: 'bg-accent/10 text-accent', icon: 'fa-brands fa-java', fa: true },
+            go: { cls: 'bg-accent/10 text-accent', icon: 'Go', fa: false },
+            rust: { cls: 'bg-accent/10 text-accent', icon: 'fa-brands fa-rust', fa: true },
+            php: { cls: 'bg-accent/10 text-accent', icon: 'fa-brands fa-php', fa: true },
+            ruby: { cls: 'bg-accent/10 text-accent', icon: 'fa-solid fa-gem', fa: true },
+            csharp: { cls: 'bg-accent/10 text-accent', icon: 'C#', fa: false },
+            xml: { cls: 'bg-accent/10 text-accent', icon: 'fa-regular fa-file-code', fa: true },
+            plaintext: { cls: 'bg-surface text-muted', icon: 'fa-regular fa-file', fa: true }
+        };
+
+
+        function langFromFilename(name) {
+            const ext = (name.split('.').pop() || '').toLowerCase();
+            return LANG_BY_EXT[ext] || 'plaintext';
+        }
+
+        function uid() {
+            return 'id_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 9);
+        }
+
+        // ============================== INDEXEDDB LAYER ==============================
+        const DB_NAME = 'aura_edit_db';
+        const DB_VERSION = 1;
+        let db = null;
+
+        function openDB() {
+            return new Promise((resolve, reject) => {
+                const req = indexedDB.open(DB_NAME, DB_VERSION);
+                req.onupgradeneeded = (e) => {
+                    const _db = e.target.result;
+                    if (!_db.objectStoreNames.contains('projects')) {
+                        _db.createObjectStore('projects', { keyPath: 'id' });
+                    }
+                    if (!_db.objectStoreNames.contains('trees')) {
+                        _db.createObjectStore('trees', { keyPath: 'projectId' });
+                    }
+                    if (!_db.objectStoreNames.contains('settings')) {
+                        _db.createObjectStore('settings', { keyPath: 'key' });
+                    }
+                };
+                req.onsuccess = (e) => { db = e.target.result; resolve(db); };
+                req.onerror = (e) => reject(e);
+            });
+        }
+
+        function idbGet(storeName, key) {
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(storeName, 'readonly');
+                const store = tx.objectStore(storeName);
+                const req = store.get(key);
+                req.onsuccess = () => resolve(req.result);
+                req.onerror = (e) => reject(e);
+            });
+        }
+
+        function idbGetAll(storeName) {
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(storeName, 'readonly');
+                const store = tx.objectStore(storeName);
+                const req = store.getAll();
+                req.onsuccess = () => resolve(req.result);
+                req.onerror = (e) => reject(e);
+            });
+        }
+
+        function idbPut(storeName, value) {
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(storeName, 'readwrite');
+                const store = tx.objectStore(storeName);
+                const req = store.put(value);
+                req.onsuccess = () => resolve(req.result);
+                req.onerror = (e) => reject(e);
+            });
+        }
+
+        function idbDelete(storeName, key) {
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(storeName, 'readwrite');
+                const store = tx.objectStore(storeName);
+                const req = store.delete(key);
+                req.onsuccess = () => resolve(req.result);
+                req.onerror = (e) => reject(e);
+            });
+        }
+
+        async function saveSetting(key, value) {
+            try { await idbPut('settings', { key, value }); } catch (e) { console.error(e); }
+        }
+
+        async function loadSetting(key, fallback) {
+            try {
+                const rec = await idbGet('settings', key);
+                return rec ? rec.value : fallback;
+            } catch (e) { return fallback; }
+        }
+
+        async function saveProjects() {
+            try {
+                for (const p of projects) {
+                    await idbPut('projects', p);
+                }
+                await saveSetting('current_project_id', currentProjectId);
+            } catch (e) { console.error(e); }
+        }
+
+        async function saveTree() {
+            if (!currentProjectId || !fileTree) return;
+            try {
+                await idbPut('trees', { projectId: currentProjectId, root: fileTree, openFileId: openFile ? openFile.id : null, expanded: Array.from(expandedFolders) });
+            } catch (e) { console.error(e); }
+        }
+
+        function debounceSaveTree() {
+            if (saveDebounceTimer) clearTimeout(saveDebounceTimer);
+            saveDebounceTimer = setTimeout(() => { saveTree(); }, 400);
+        }
+
+        // ============================== DEFAULT PROJECT/TREE BUILDERS ==============================
+        function makeFile(name, content) {
+            return { id: uid(), type: 'file', name, content, lang: langFromFilename(name) };
+        }
+        function makeFolder(name, children = []) {
+            return { id: uid(), type: 'folder', name, children };
+        }
+
+        function buildDefaultTree() {
+            const root = makeFolder('root', []);
+            const indexHtml = makeFile('index.html', TEMPLATE_CODES.html);
+            const stylesCss = makeFile('styles.css', TEMPLATE_CODES.css);
+            const algoJs = makeFile('algorithms.js', TEMPLATE_CODES.javascript);
+            const searchPy = makeFile('binary_search.py', TEMPLATE_CODES.python);
+            const readme = makeFile('README.md', TEMPLATE_CODES.markdown);
+
+            const srcFolder = makeFolder('src', [algoJs, stylesCss]);
+            root.children.push(indexHtml, srcFolder, searchPy, readme);
+            return root;
+        }
+
+        function findFirstFile(node) {
+            if (!node) return null;
+            if (node.type === 'file') return node;
+            for (const child of (node.children || [])) {
+                const f = findFirstFile(child);
+                if (f) return f;
+            }
+            return null;
+        }
+
+        function findNodeById(node, id, parent = null) {
+            if (!node) return null;
+            if (node.id === id) return { node, parent };
+            if (node.type === 'folder') {
+                for (const child of node.children) {
+                    const found = findNodeById(child, id, node);
+                    if (found) return found;
+                }
+            }
+            return null;
+        }
+
+        function getNodePath(node, root, trail = []) {
+            if (node.id === root.id) return trail.length ? trail.join('/') : node.name;
+            function walk(current, path) {
+                for (const child of current.children) {
+                    const nextPath = [...path, child.name];
+                    if (child.id === node.id) return nextPath;
+                    if (child.type === 'folder') {
+                        const res = walk(child, nextPath);
+                        if (res) return res;
+                    }
+                }
+                return null;
+            }
+            const res = walk(root, []);
+            return res ? res.join('/') : node.name;
+        }
+
+        function siblingNameExists(folder, name, excludeId = null) {
+            return folder.children.some(c => c.name.toLowerCase() === name.toLowerCase() && c.id !== excludeId);
+        }
+
+        // ============================== PROJECT MANAGEMENT ==============================
+        async function initProjects() {
+            let storedProjects = [];
+            try { storedProjects = await idbGetAll('projects'); } catch (e) { storedProjects = []; }
+
+            if (!storedProjects || storedProjects.length === 0) {
+                const defaultProject = { id: uid(), name: 'My First Project', createdAt: Date.now() };
+                projects = [defaultProject];
+                const root = buildDefaultTree();
+                await idbPut('projects', defaultProject);
+                await idbPut('trees', { projectId: defaultProject.id, root, openFileId: null, expanded: ['root'] });
+            } else {
+                projects = storedProjects.sort((a, b) => a.createdAt - b.createdAt);
+            }
+
+            const savedCurrent = await loadSetting('current_project_id', null);
+            currentProjectId = (savedCurrent && projects.some(p => p.id === savedCurrent)) ? savedCurrent : projects[0].id;
+
+            renderProjectSelect();
+            await loadProject(currentProjectId);
+        }
+
+        function renderProjectSelect() {
+            projectSelect.innerHTML = '';
+            projects.forEach(p => {
+                const opt = document.createElement('option');
+                opt.value = p.id;
+                opt.textContent = p.name;
+                if (p.id === currentProjectId) opt.selected = true;
+                projectSelect.appendChild(opt);
+            });
+        }
+
+        async function loadProject(projectId) {
+            currentProjectId = projectId;
+            let treeRecord = null;
+            try { treeRecord = await idbGet('trees', projectId); } catch (e) { treeRecord = null; }
+
+            if (!treeRecord) {
+                fileTree = buildDefaultTree();
+                expandedFolders = new Set(['root']);
+                openFile = findFirstFile(fileTree);
+                await idbPut('trees', { projectId, root: fileTree, openFileId: openFile ? openFile.id : null, expanded: Array.from(expandedFolders) });
+            } else {
+                fileTree = treeRecord.root;
+                expandedFolders = new Set(treeRecord.expanded || ['root']);
+                expandedFolders.add('root');
+                if (treeRecord.openFileId) {
+                    const found = findNodeById(fileTree, treeRecord.openFileId);
+                    openFile = found ? found.node : findFirstFile(fileTree);
+                } else {
+                    openFile = findFirstFile(fileTree);
+                }
+            }
+
+            await saveProjects();
+            renderFileTree();
+            openFileInEditor(openFile);
+        }
+
+        function promptDialog(title, defaultValue = '') {
+            return new Promise((resolve) => {
+                promptModalTitle.textContent = title;
+                promptModalInput.value = defaultValue;
+                promptModal.classList.remove('hidden');
+                setTimeout(() => { promptModalInput.focus(); promptModalInput.select(); }, 50);
+
+                function cleanup(result) {
+                    promptModal.classList.add('hidden');
+                    promptModalConfirm.removeEventListener('click', onConfirm);
+                    promptModalCancel.removeEventListener('click', onCancel);
+                    promptModalInput.removeEventListener('keydown', onKey);
+                    resolve(result);
+                }
+                function onConfirm() { cleanup(promptModalInput.value.trim()); }
+                function onCancel() { cleanup(null); }
+                function onKey(e) {
+                    if (e.key === 'Enter') { e.preventDefault(); onConfirm(); }
+                    if (e.key === 'Escape') { e.preventDefault(); onCancel(); }
+                }
+                promptModalConfirm.addEventListener('click', onConfirm);
+                promptModalCancel.addEventListener('click', onCancel);
+                promptModalInput.addEventListener('keydown', onKey);
+            });
+        }
+
+        function confirmDialog(title, body) {
+            return new Promise((resolve) => {
+                confirmModalTitle.textContent = title;
+                confirmModalBody.textContent = body;
+                confirmModal.classList.remove('hidden');
+
+                function cleanup(result) {
+                    confirmModal.classList.add('hidden');
+                    confirmModalConfirm.removeEventListener('click', onConfirm);
+                    confirmModalCancel.removeEventListener('click', onCancel);
+                    resolve(result);
+                }
+                function onConfirm() { cleanup(true); }
+                function onCancel() { cleanup(false); }
+                confirmModalConfirm.addEventListener('click', onConfirm);
+                confirmModalCancel.addEventListener('click', onCancel);
+            });
+        }
+
+        btnNewProject.addEventListener('click', async () => {
+            const name = await promptDialog('New Project Name');
+            if (!name) return;
+            const newProject = { id: uid(), name, createdAt: Date.now() };
+            projects.push(newProject);
+            const root = makeFolder('root', [makeFile('index.html', TEMPLATE_CODES.html)]);
+            await idbPut('projects', newProject);
+            await idbPut('trees', { projectId: newProject.id, root, openFileId: null, expanded: ['root'] });
+            renderProjectSelect();
+            projectSelect.value = newProject.id;
+            await loadProject(newProject.id);
+            triggerToast(`Project "${name}" created`, 'success');
+        });
+
+        btnRenameProject.addEventListener('click', async () => {
+            const project = projects.find(p => p.id === currentProjectId);
+            if (!project) return;
+            const name = await promptDialog('Rename Project', project.name);
+            if (!name) return;
+            project.name = name;
+            await idbPut('projects', project);
+            renderProjectSelect();
+            triggerToast('Project renamed', 'success');
+        });
+
+        btnDeleteProject.addEventListener('click', async () => {
+            if (projects.length <= 1) {
+                triggerToast('Cannot delete the only project', 'info');
+                return;
+            }
+            const project = projects.find(p => p.id === currentProjectId);
+            const ok = await confirmDialog('Delete Project', `Delete "${project.name}" and all its files? This cannot be undone.`);
+            if (!ok) return;
+
+            await idbDelete('projects', project.id);
+            await idbDelete('trees', project.id);
+            projects = projects.filter(p => p.id !== project.id);
+            currentProjectId = projects[0].id;
+            renderProjectSelect();
+            await loadProject(currentProjectId);
+            triggerToast('Project deleted', 'success');
+        });
+
+        projectSelect.addEventListener('change', async (e) => {
+            await loadProject(e.target.value);
+            triggerToast('Project switched', 'info');
+        });
+
+        // ============================== FILE TREE RENDERING ==============================
+        function renderFileTree() {
+            fileTreeEl.innerHTML = '';
+            renderFolderChildren(fileTree, fileTreeEl, 0);
+        }
+
+        function renderFolderChildren(folderNode, container, depth) {
+            const sorted = [...folderNode.children].sort((a, b) => {
+                if (a.type !== b.type) return a.type === 'folder' ? -1 : 1;
+                return a.name.localeCompare(b.name);
+            });
+
+            sorted.forEach(node => {
+                if (node.type === 'folder') {
+                    const isExpanded = expandedFolders.has(node.id);
+                    const row = document.createElement('div');
+                    row.className = 'tree-row group flex items-center gap-1.5 px-1.5 py-1 rounded-md cursor-pointer text-xs font-semibold hover:bg-accent/10 text-ink';
+                    row.style.paddingLeft = `${6 + depth * 14}px`;
+                    row.dataset.nodeId = node.id;
+                    row.innerHTML = `
+                        <i class="fa-solid fa-chevron-${isExpanded ? 'down' : 'right'} text-[9px] w-2.5 text-muted"></i>
+                        <i class="fa-solid fa-folder${isExpanded ? '-open' : ''} text-accent text-xs w-4 text-center"></i>
+                        <span class="flex-1 truncate">${escapeHTML(node.name)}</span>
+                    `;
+                    row.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        if (expandedFolders.has(node.id)) {
+                            expandedFolders.delete(node.id);
+                        } else {
+                            expandedFolders.add(node.id);
+                        }
+                        renderFileTree();
+                        debounceSaveTree();
+                    });
+                    row.addEventListener('contextmenu', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        openContextMenu(e, node.id, false);
+                    });
+                    container.appendChild(row);
+
+                    if (isExpanded) {
+                        renderFolderChildren(node, container, depth + 1);
+                    }
+                } else {
+                    const isActive = openFile && openFile.id === node.id;
+                    const iconInfo = FILE_ICONS[node.lang] || FILE_ICONS.plaintext;
+                    const row = document.createElement('div');
+                    row.className = `tree-row group flex items-center gap-1.5 px-1.5 py-1 rounded-md cursor-pointer text-xs font-medium transition-colors ${isActive ? 'bg-accent/10 text-accent' : 'hover:bg-accent/10 text-ink'}`;
+                    row.style.paddingLeft = `${6 + depth * 14 + 14}px`;
+                    row.dataset.nodeId = node.id;
+
+                    const iconHTML = iconInfo.fa
+                        ? `<i class="${iconInfo.icon} text-[10px]"></i>`
+                        : `<span class="text-[8px] font-black">${iconInfo.icon}</span>`;
+
+                    row.innerHTML = `
+                        <div class="w-4 h-4 rounded ${iconInfo.cls} flex items-center justify-center shrink-0">${iconHTML}</div>
+                        <span class="flex-1 truncate">${escapeHTML(node.name)}</span>
+                    `;
+                    row.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        openFileInEditor(node);
+                    });
+                    row.addEventListener('contextmenu', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        openContextMenu(e, node.id, false);
+                    });
+                    container.appendChild(row);
+                }
+            });
+        }
+
+        function escapeHTML(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
+        // Right-click on empty tree area = root context menu
+        fileTreeEl.addEventListener('contextmenu', (e) => {
+            if (e.target === fileTreeEl) {
+                e.preventDefault();
+                openContextMenu(e, 'root', true);
+            }
+        });
+
+        function openContextMenu(e, nodeId, isRoot) {
+            ctxTargetNodeId = nodeId;
+            ctxTargetProjectRoot = isRoot;
+
+            // Show/hide rename & delete based on root
+            const renameBtn = contextMenu.querySelector('[data-action="rename"]');
+            const deleteBtn = contextMenu.querySelector('[data-action="delete"]');
+            if (isRoot || nodeId === 'root') {
+                renameBtn.classList.add('hidden');
+                deleteBtn.classList.add('hidden');
+            } else {
+                renameBtn.classList.remove('hidden');
+                deleteBtn.classList.remove('hidden');
+            }
+
+            // If target is a file (not folder), hide "new file/folder inside"
+            const targetInfo = findNodeById(fileTree, nodeId);
+            const newFileBtn = contextMenu.querySelector('[data-action="new-file"]');
+            const newFolderBtn = contextMenu.querySelector('[data-action="new-folder"]');
+            if (targetInfo && targetInfo.node.type === 'file') {
+                newFileBtn.classList.add('hidden');
+                newFolderBtn.classList.add('hidden');
+            } else {
+                newFileBtn.classList.remove('hidden');
+                newFolderBtn.classList.remove('hidden');
+            }
+
+            contextMenu.classList.remove('hidden');
+            const x = e.clientX, y = e.clientY;
+            contextMenu.style.left = `${x}px`;
+            contextMenu.style.top = `${y}px`;
+
+            // keep on-screen
+            requestAnimationFrame(() => {
+                const rect = contextMenu.getBoundingClientRect();
+                if (rect.right > window.innerWidth) contextMenu.style.left = `${window.innerWidth - rect.width - 8}px`;
+                if (rect.bottom > window.innerHeight) contextMenu.style.top = `${window.innerHeight - rect.height - 8}px`;
+            });
+        }
+
+        function closeContextMenu() {
+            contextMenu.classList.add('hidden');
+        }
+
+        document.addEventListener('click', closeContextMenu);
+        window.addEventListener('blur', closeContextMenu);
+        document.addEventListener('scroll', closeContextMenu, true);
+
+        contextMenu.addEventListener('click', async (e) => {
+            const btn = e.target.closest('.ctx-item');
+            if (!btn) return;
+            const action = btn.dataset.action;
+            const nodeId = ctxTargetNodeId;
+            closeContextMenu();
+
+            let targetFolder = fileTree;
+            let targetNode = null;
+            if (nodeId !== 'root') {
+                const found = findNodeById(fileTree, nodeId);
+                if (found) {
+                    targetNode = found.node;
+                    targetFolder = found.node.type === 'folder' ? found.node : found.parent;
+                }
+            }
+
+            if (action === 'new-file') {
+                await createNewFile(targetFolder);
+            } else if (action === 'new-folder') {
+                await createNewFolder(targetFolder);
+            } else if (action === 'rename') {
+                await renameNode(targetNode);
+            } else if (action === 'delete') {
+                await deleteNode(targetNode);
+            }
+        });
+
+        async function createNewFile(parentFolder) {
+            const name = await promptDialog('New File Name (e.g. script.js)');
+            if (!name) return;
+            if (siblingNameExists(parentFolder, name)) {
+                triggerToast('A file or folder with that name already exists', 'info');
+                return;
+            }
+            const file = makeFile(name, TEMPLATE_CODES[langFromFilename(name)] || '');
+            parentFolder.children.push(file);
+            if (parentFolder.id !== 'root') expandedFolders.add(parentFolder.id);
+            renderFileTree();
+            await saveTree();
+            openFileInEditor(file);
+            triggerToast(`Created ${name}`, 'success');
+        }
+
+        async function createNewFolder(parentFolder) {
+            const name = await promptDialog('New Folder Name');
+            if (!name) return;
+            if (siblingNameExists(parentFolder, name)) {
+                triggerToast('A file or folder with that name already exists', 'info');
+                return;
+            }
+            const folder = makeFolder(name, []);
+            parentFolder.children.push(folder);
+            expandedFolders.add(folder.id);
+            if (parentFolder.id !== 'root') expandedFolders.add(parentFolder.id);
+            renderFileTree();
+            await saveTree();
+            triggerToast(`Created folder ${name}`, 'success');
+        }
+
+        async function renameNode(node) {
+            if (!node) return;
+            const found = findNodeById(fileTree, node.id);
+            const parent = found ? found.parent : fileTree;
+            const name = await promptDialog(`Rename ${node.type}`, node.name);
+            if (!name || name === node.name) return;
+            if (siblingNameExists(parent, name, node.id)) {
+                triggerToast('A file or folder with that name already exists', 'info');
+                return;
+            }
+            node.name = name;
+            if (node.type === 'file') {
+                node.lang = langFromFilename(name);
+            }
+            renderFileTree();
+            await saveTree();
+            if (openFile && openFile.id === node.id) {
+                openFileInEditor(node);
+            }
+            triggerToast('Renamed successfully', 'success');
+        }
+
+        async function deleteNode(node) {
+            if (!node) return;
+            const found = findNodeById(fileTree, node.id);
+            if (!found) return;
+            const parent = found.parent;
+
+            const itemType = node.type === 'folder' ? 'folder and all its contents' : 'file';
+            const ok = await confirmDialog('Delete', `Delete "${node.name}" ${itemType === 'file' ? '' : '(and all its contents)'}? This cannot be undone.`);
+            if (!ok) return;
+
+            parent.children = parent.children.filter(c => c.id !== node.id);
+
+            // If the open file was deleted (or inside deleted folder), open another file
+            const stillExists = openFile ? findNodeById(fileTree, openFile.id) : null;
+            if (!stillExists) {
+                openFile = findFirstFile(fileTree);
+            }
+
+            renderFileTree();
+            await saveTree();
+            openFileInEditor(openFile);
+            triggerToast('Deleted successfully', 'success');
+        }
+
+        // Root-level new file/folder buttons
+        btnNewFile.addEventListener('click', () => createNewFile(fileTree));
+        btnNewFolder.addEventListener('click', () => createNewFolder(fileTree));
+
+        // ============================== EDITOR <-> FILE SYNC ==============================
+        function openFileInEditor(node) {
+            if (!node) {
+                // No files at all - create a default one
+                const file = makeFile('untitled.txt', '');
+                fileTree.children.push(file);
+                node = file;
+                renderFileTree();
+                saveTree();
+            }
+            openFile = node;
+
+            highlightCode.className = '';
+            highlightCode.classList.add(PRISM_LANG_MAP[node.lang] || 'language-none');
+            languageSelect.value = node.lang;
+
+            editingArea.value = node.content || '';
+            const path = getNodePath(node, fileTree);
+            activeFilename.textContent = path;
+
+            handleEditingSyntax(false);
+            renderFileTree();
+            runLiveSandbox();
+            saveTree();
+        }
+
+        // Language select now changes the *current file's* language (re-highlight only)
+        languageSelect.addEventListener('change', (e) => {
+            if (!openFile) return;
+            openFile.lang = e.target.value;
+            highlightCode.className = '';
+            highlightCode.classList.add(PRISM_LANG_MAP[openFile.lang] || 'language-none');
+            handleEditingSyntax(true);
+            runLiveSandbox();
+            triggerToast(`File language set to ${openFile.lang.toUpperCase()}`, 'info');
+        });
+
+        // ============================== EDITOR CORE ==============================
+        function updateEditorProperties() {
+            editingArea.style.fontSize = `${editorFontSize}px`;
+            highlightPre.style.fontSize = `${editorFontSize}px`;
+            highlightCode.style.fontSize = `${editorFontSize}px`;
+            lineNumbers.style.fontSize = `${editorFontSize}px`;
+
+            const computedLineHeight = 24;
+            editingArea.style.lineHeight = `${computedLineHeight}px`;
+            highlightCode.style.lineHeight = `${computedLineHeight}px`;
+            lineNumbers.style.lineHeight = `${computedLineHeight}px`;
+
+            editingArea.style.tabSize = tabSpaces;
+            highlightCode.style.tabSize = tabSpaces;
+            editingArea.style.mozTabSize = tabSpaces;
+            highlightCode.style.mozTabSize = tabSpaces;
+        }
+
+        function handleEditingSyntax(persist = true) {
+            let code = editingArea.value;
+
+            if (code[code.length - 1] === '\n') {
+                code += ' ';
+            }
+
+            highlightCode.textContent = code;
+            Prism.highlightElement(highlightCode);
+
+            updateLineCounter();
+            updateLiveStatusInfo();
+
+            if (openFile) {
+                openFile.content = editingArea.value;
+                if (autosaveEnabled && persist) {
+                    debounceSaveTree();
+                }
+            }
+        }
+
+        function updateLineCounter() {
+            const lines = editingArea.value.split('\n');
+            const lineCount = lines.length;
+
+            let numHTML = '';
+            for (let i = 1; i <= lineCount; i++) {
+                numHTML += `<div>${i}</div>`;
+            }
+            lineNumbers.innerHTML = numHTML;
+        }
+
+        function setupSynchronizedScrolling() {
+            editingArea.addEventListener('scroll', () => {
+                highlightPre.scrollTop = editingArea.scrollTop;
+                highlightPre.scrollLeft = editingArea.scrollLeft;
+                lineNumbers.scrollTop = editingArea.scrollTop;
+            });
+        }
+
+        function updateLiveStatusInfo() {
+            const value = editingArea.value;
+            charCounter.textContent = `${value.length} char${value.length !== 1 ? 's' : ''}`;
+
+            const selectionStart = editingArea.selectionStart;
+            const textToCursor = value.substring(0, selectionStart);
+            const lines = textToCursor.split('\n');
+            const currentLine = lines.length;
+            const currentCol = lines[lines.length - 1].length + 1;
+
+            lineColCounter.textContent = `Ln ${currentLine}, Col ${currentCol}`;
+        }
+
+        function setupKeyboardHandlers() {
+            editingArea.addEventListener('keydown', (e) => {
+                const selStart = editingArea.selectionStart;
+                const selEnd = editingArea.selectionEnd;
+                const value = editingArea.value;
+
+                if (e.key === 'Tab') {
+                    e.preventDefault();
+                    const tabValue = ' '.repeat(tabSpaces);
+
+                    editingArea.value = value.substring(0, selStart) + tabValue + value.substring(selEnd);
+                    editingArea.selectionStart = editingArea.selectionEnd = selStart + tabSpaces;
+                    handleEditingSyntax();
+                }
+
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+
+                    const lastNewLineIndex = value.lastIndexOf('\n', selStart - 1);
+                    const currentLineStr = value.substring(lastNewLineIndex + 1, selStart);
+                    const matchWhitespace = currentLineStr.match(/^\s*/);
+                    let indent = matchWhitespace ? matchWhitespace[0] : '';
+
+                    const lastChar = currentLineStr.trim().slice(-1);
+                    let bonusIndent = '';
+                    if (['{', '[', '(', ':'].includes(lastChar)) {
+                        bonusIndent = ' '.repeat(tabSpaces);
+                    }
+
+                    const currentIndentLine = indent + bonusIndent;
+                    const closingHandle = ['{', '[', '('].includes(lastChar) && autocloseEnabled;
+
+                    let insertStr = '\n' + currentIndentLine;
+                    let cursorShift = insertStr.length;
+
+                    if (closingHandle) {
+                        const braceMap = { '{': '}', '[': ']', '(': ')' };
+                        const closeBrace = braceMap[lastChar] || '';
+
+                        const nextChar = value.charAt(selStart);
+                        if (nextChar === closeBrace) {
+                            // Already closed, just format indent
+                        } else {
+                            insertStr += '\n' + indent + closeBrace;
+                        }
+                    }
+
+                    editingArea.value = value.substring(0, selStart) + insertStr + value.substring(selEnd);
+                    editingArea.selectionStart = editingArea.selectionEnd = selStart + cursorShift;
+                    handleEditingSyntax();
+                }
+
+                if (autocloseEnabled) {
+                    const keysToClose = {
+                        '{': '}',
+                        '[': ']',
+                        '(': ')',
+                        '"': '"',
+                        "'": "'",
+                        '`': '`'
+                    };
+
+                    if (keysToClose[e.key] !== undefined) {
+                        e.preventDefault();
+                        const closingChar = keysToClose[e.key];
+
+                        const selectionText = value.substring(selStart, selEnd);
+                        const replacement = e.key + selectionText + closingChar;
+
+                        editingArea.value = value.substring(0, selStart) + replacement + value.substring(selEnd);
+
+                        if (selStart !== selEnd) {
+                            editingArea.selectionStart = selStart + 1;
+                            editingArea.selectionEnd = selEnd + 1;
+                        } else {
+                            editingArea.selectionStart = editingArea.selectionEnd = selStart + 1;
+                        }
+                        handleEditingSyntax();
+                    }
+                }
+            });
+
+            editingArea.addEventListener('input', handleEditingSyntax);
+            editingArea.addEventListener('keyup', updateLiveStatusInfo);
+            editingArea.addEventListener('click', updateLiveStatusInfo);
+        }
+
+        // ============================== LIVE SANDBOX (MULTI-FILE / MULTI-LANGUAGE / MAX LEVEL) ==============================
+
+        const CONSOLE_CATCH_SCRIPT = `
+            <script>
+                (function() {
+                    const originalLog = console.log;
+                    const originalError = console.error;
+                    const originalWarn = console.warn;
+                    const originalInfo = console.info;
+
+                    function fmt(arg) {
+                        if (arg instanceof Error) return arg.stack || (arg.name + ': ' + arg.message);
+                        if (typeof arg === 'object' && arg !== null) {
+                            try { return JSON.stringify(arg, null, 2); } catch(e) { return String(arg); }
+                        }
+                        return String(arg);
+                    }
+
+                    function postLogToParent(type, args) {
+                        window.parent.postMessage({
+                            type: 'IFRAME_CONSOLE',
+                            logType: type,
+                            message: Array.from(args).map(fmt).join(' ')
+                        }, '*');
+                    }
+
+                    console.log = function(...args) { postLogToParent('log', args); originalLog.apply(console, args); };
+                    console.error = function(...args) { postLogToParent('error', args); originalError.apply(console, args); };
+                    console.warn = function(...args) { postLogToParent('warn', args); originalWarn.apply(console, args); };
+                    console.info = function(...args) { postLogToParent('log', args); originalInfo.apply(console, args); };
+
+                    window.addEventListener('error', function(e) {
+                        postLogToParent('error', [(e.message || 'Script error') + ' (' + (e.filename ? e.filename.split('/').pop() : 'inline') + ':' + e.lineno + ')']);
+                    });
+                    window.addEventListener('unhandledrejection', function(e) {
+                        postLogToParent('error', ['Unhandled Promise Rejection: ' + (e.reason && e.reason.message ? e.reason.message : e.reason)]);
+                    });
+                })();
+            <\/script>
+        `;
+
+        // ---- File tree helpers ----
+        function flattenTree(node, prefix, map) {
+            for (const child of node.children) {
+                const path = prefix ? `${prefix}/${child.name}` : child.name;
+                if (child.type === 'file') {
+                    map[path] = child;
+                } else {
+                    flattenTree(child, path, map);
+                }
+            }
+            return map;
+        }
+
+        function getAllFilesMap() {
+            return flattenTree(fileTree, '', {});
+        }
+
+        function resolvePath(basePath, relPath) {
+            if (/^(https?:|data:|\/\/|#)/.test(relPath)) return null;
+            const baseParts = basePath.split('/').slice(0, -1);
+            const relParts = relPath.split('/');
+            const stack = [...baseParts];
+            for (const part of relParts) {
+                if (part === '' || part === '.') continue;
+                if (part === '..') stack.pop();
+                else stack.push(part);
+            }
+            return stack.join('/');
+        }
+
+        const MIME_BY_EXT = {
+            css: 'text/css', js: 'text/javascript', mjs: 'text/javascript', json: 'application/json',
+            png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', svg: 'image/svg+xml',
+            webp: 'image/webp', ico: 'image/x-icon', html: 'text/html', htm: 'text/html',
+            txt: 'text/plain', md: 'text/markdown', woff: 'font/woff', woff2: 'font/woff2'
+        };
+
+        function mimeFor(name) {
+            const ext = (name.split('.').pop() || '').toLowerCase();
+            return MIME_BY_EXT[ext] || 'text/plain';
+        }
+
+        function escapeRegex(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+
+        // ============================== SCSS / LESS PREPROCESSOR (best-effort, no deps) ==============================
+        // Flattens nested selectors (incl. `&`), resolves @media/@supports wrappers, passes through
+        // @keyframes/@font-face verbatim.
+        function processCSSBlock(content, parentSelectors) {
+            let decls = '';
+            let rules = [];
+            let i = 0, buf = '';
+            const n = content.length;
+
+            while (i < n) {
+                const ch = content[i];
+                if (ch === '{') {
+                    const lastSemi = buf.lastIndexOf(';');
+                    decls += buf.substring(0, lastSemi + 1);
+                    const selectorRaw = buf.substring(lastSemi + 1).trim();
+                    buf = '';
+
+                    let depth = 1, j = i + 1;
+                    while (j < n && depth > 0) {
+                        if (content[j] === '{') depth++;
+                        else if (content[j] === '}') depth--;
+                        j++;
+                    }
+                    const inner = content.substring(i + 1, j - 1);
+
+                    if (selectorRaw.startsWith('@')) {
+                        const atName = (selectorRaw.match(/^@[\w-]+/) || ['@'])[0];
+                        if (['@keyframes', '@-webkit-keyframes', '@-moz-keyframes', '@font-face', '@page'].includes(atName)) {
+                            rules.push(selectorRaw + ' {\n' + inner.trim() + '\n}');
+                        } else {
+                            const sub = processCSSBlock(inner, parentSelectors);
+                            let body = '';
+                            if (sub.decls.trim()) {
+                                const sel = parentSelectors.filter(s => s).join(',\n') || ':root';
+                                body += sel + ' {\n' + sub.decls.trim() + '\n}\n\n';
+                            }
+                            body += sub.rules.join('\n\n');
+                            if (body.trim()) rules.push(selectorRaw + ' {\n' + body.trim() + '\n}');
+                        }
+                    } else {
+                        const childSelectors = selectorRaw.split(',').map(s => s.trim()).filter(Boolean);
+                        let combined;
+                        if (parentSelectors.length === 1 && parentSelectors[0] === '') {
+                            combined = childSelectors;
+                        } else if (childSelectors.length === 0) {
+                            combined = parentSelectors;
+                        } else {
+                            combined = [];
+                            for (const p of parentSelectors) {
+                                for (const c of childSelectors) {
+                                    combined.push(c.includes('&') ? c.replace(/&/g, p) : (p ? p + ' ' + c : c));
+                                }
+                            }
+                        }
+                        const sub = processCSSBlock(inner, combined);
+                        if (sub.decls.trim()) {
+                            rules.push(combined.join(',\n') + ' {\n' + sub.decls.trim() + '\n}');
+                        }
+                        rules.push(...sub.rules);
+                    }
+                    i = j;
+                    continue;
+                }
+                buf += ch;
+                i++;
+            }
+            decls += buf;
+            return { decls, rules };
+        }
+
+        function flattenNestedCSS(css) {
+            const result = processCSSBlock(css, ['']);
+            let out = result.rules.join('\n\n');
+            if (result.decls.trim()) {
+                out = result.decls.trim() + '\n\n' + out;
+            }
+            return out;
+        }
+
+        function stripAtRuleBlocks(css, names) {
+            let i = 0;
+            let out = '';
+            while (i < css.length) {
+                let matched = false;
+                for (const name of names) {
+                    if (css.startsWith(name, i)) {
+                        let k = i + name.length;
+                        while (k < css.length && css[k] !== '{' && css[k] !== ';') k++;
+                        if (css[k] === '{') {
+                            let depth = 1, j = k + 1;
+                            while (j < css.length && depth > 0) {
+                                if (css[j] === '{') depth++;
+                                else if (css[j] === '}') depth--;
+                                j++;
+                            }
+                            i = j;
+                        } else {
+                            i = k + 1;
+                        }
+                        matched = true;
+                        break;
+                    }
+                }
+                if (!matched) {
+                    out += css[i];
+                    i++;
+                }
+            }
+            return out;
+        }
+
+        function preprocessSCSS(code) {
+            let css = code;
+            const vars = {};
+            css = css.replace(/\$([\w-]+)\s*:\s*([^;]+);/g, (m, name, val) => {
+                vars[name] = val.trim();
+                return '';
+            });
+            css = stripAtRuleBlocks(css, ['@mixin', '@function', '@each', '@for', '@while', '@if', '@else if', '@else']);
+            css = css.replace(/@(include|extend|use|forward|import)\s+[^;]*;/g, '');
+            const names = Object.keys(vars).sort((a, b) => b.length - a.length);
+            for (const name of names) {
+                css = css.replace(new RegExp('\\$' + escapeRegex(name) + '(?![\\w-])', 'g'), vars[name]);
+            }
+            return flattenNestedCSS(css);
+        }
+
+        function preprocessLESS(code) {
+            let css = code;
+            const vars = {};
+            css = css.replace(/@([\w-]+)\s*:\s*([^;]+);/g, (m, name, val) => {
+                vars[name] = val.trim();
+                return '';
+            });
+            const names = Object.keys(vars).sort((a, b) => b.length - a.length);
+            for (const name of names) {
+                css = css.replace(new RegExp('@' + escapeRegex(name) + '(?![\\w-])', 'g'), vars[name]);
+            }
+            return flattenNestedCSS(css);
+        }
+
+        // Convert any css-family source into plain CSS based on its language
+        function toPlainCSS(content, lang) {
+            if (lang === 'scss') return preprocessSCSS(content);
+            if (lang === 'less') return preprocessLESS(content);
+            return content;
+        }
+
+        // ============================== JS / TS / JSX / TSX TRANSPILATION (Babel standalone) ==============================
+        function transpileScript(code, lang) {
+            if (lang === 'javascript') return { code, error: null };
+            if (!window.Babel) return { code, error: 'Babel not loaded — cannot transpile ' + lang };
+            try {
+                const presets = [];
+                if (lang === 'typescript') presets.push(['typescript', { onlyRemoveTypeImports: true }]);
+                if (lang === 'tsx') presets.push(['typescript', { isTSX: true, allExtensions: true }]);
+                if (lang === 'jsx' || lang === 'tsx') presets.push('react');
+
+                const filename = lang === 'tsx' ? 'file.tsx' : (lang === 'jsx' ? 'file.jsx' : (lang === 'typescript' ? 'file.ts' : 'file.js'));
+                const result = Babel.transform(code, {
+                    presets,
+                    filename,
+                    sourceType: 'module',
+                    retainLines: true
+                });
+                return { code: result.code, error: null };
+            } catch (err) {
+                return { code: '', error: err.message || String(err) };
+            }
+        }
+
+        const SCRIPT_LANGS = ['javascript', 'typescript', 'jsx', 'tsx'];
+        const CSS_LANGS = ['css', 'scss', 'less'];
+
+        // ============================== ASSET INLINING (multi-file project resolution) ==============================
+        function inlineProjectAssets(source, basePath, filesMap, lang, visited = new Set()) {
+            if (visited.has(basePath)) return source;
+            visited = new Set(visited);
+            visited.add(basePath);
+
+            if (lang === 'html') {
+                // <link rel="stylesheet" href="..."> (handles css/scss/less, both attribute orders)
+                const linkRegex = /<link\b[^>]*>/gi;
+                source = source.replace(linkRegex, (tag) => {
+                    if (!/rel=["']?stylesheet["']?/i.test(tag)) return tag;
+                    const hrefMatch = tag.match(/href=["']([^"']+)["']/i);
+                    if (!hrefMatch) return tag;
+                    const resolved = resolvePath(basePath, hrefMatch[1]);
+                    if (resolved && filesMap[resolved] && filesMap[resolved].type === 'file') {
+                        const f = filesMap[resolved];
+                        let cssContent = toPlainCSS(f.content || '', f.lang);
+                        cssContent = inlineProjectAssets(cssContent, resolved, filesMap, 'css', visited);
+                        return `<style data-src="${escapeHTML(resolved)}">\n${cssContent}\n</style>`;
+                    }
+                    return tag;
+                });
+
+                // <script src="..."> (handles js/ts/jsx/tsx)
+                source = source.replace(/<script\b([^>]*)\ssrc=["']([^"']+)["']([^>]*)>\s*<\/script>/gi, (m, pre, src, post) => {
+                    const resolved = resolvePath(basePath, src);
+                    if (resolved && filesMap[resolved] && filesMap[resolved].type === 'file') {
+                        const f = filesMap[resolved];
+                        let jsContent = f.content || '';
+                        if (SCRIPT_LANGS.includes(f.lang) && f.lang !== 'javascript') {
+                            const t = transpileScript(jsContent, f.lang);
+                            jsContent = t.error
+                                ? `console.error(${JSON.stringify('Transpile error in ' + resolved + ': ' + t.error)});`
+                                : t.code;
+                        }
+                        const attrs = (pre + post).replace(/\btype=["']module["']/i, '').trim();
+                        return `<script ${attrs} data-src="${escapeHTML(resolved)}">\n${jsContent}\n<\/script>`;
+                    }
+                    return m;
+                });
+
+                // <img>/<source>/<audio>/<video> src -> data URI for text-based assets (svg etc.)
+                source = source.replace(/(<(?:img|source|audio|video)\b[^>]*\bsrc=)["']([^"']+)["']/gi, (m, prefixAttr, src) => {
+                    const resolved = resolvePath(basePath, src);
+                    if (resolved && filesMap[resolved] && filesMap[resolved].type === 'file') {
+                        const f = filesMap[resolved];
+                        const mime = mimeFor(f.name);
+                        if (mime.startsWith('image/svg') || mime.startsWith('text/')) {
+                            const dataUri = `data:${mime};utf8,${encodeURIComponent(f.content || '')}`;
+                            return `${prefixAttr}"${dataUri}"`;
+                        }
+                    }
+                    return m;
+                });
+            } else if (lang === 'css') {
+                source = source.replace(/@import\s+(?:url\()?["']?([^"')]+)["']?\)?;/gi, (m, href) => {
+                    const resolved = resolvePath(basePath, href);
+                    if (resolved && filesMap[resolved] && filesMap[resolved].type === 'file') {
+                        const f = filesMap[resolved];
+                        const plain = toPlainCSS(f.content || '', f.lang);
+                        return inlineProjectAssets(plain, resolved, filesMap, 'css', visited);
+                    }
+                    return m;
+                });
+                source = source.replace(/url\(\s*["']?([^"')]+)["']?\s*\)/gi, (m, href) => {
+                    if (/^(https?:|data:|#)/.test(href)) return m;
+                    const resolved = resolvePath(basePath, href);
+                    if (resolved && filesMap[resolved] && filesMap[resolved].type === 'file') {
+                        const f = filesMap[resolved];
+                        const mime = mimeFor(f.name);
+                        if (mime.startsWith('image/svg') || mime.startsWith('font/') || mime.startsWith('text/')) {
+                            const dataUri = `data:${mime};utf8,${encodeURIComponent(f.content || '')}`;
+                            return `url("${dataUri}")`;
+                        }
+                    }
+                    return m;
+                });
+            }
+
+            return source;
+        }
+
+        function findEntryHtmlFile(filesMap) {
+            const preferredNames = ['index.html', 'index.htm', 'main.html', 'home.html'];
+            for (const name of preferredNames) {
+                if (filesMap[name]) return filesMap[name];
+            }
+            for (const [path, f] of Object.entries(filesMap)) {
+                if (f.type === 'file' && f.lang === 'html' && !path.includes('/')) return f;
+            }
+            for (const [path, f] of Object.entries(filesMap)) {
+                if (f.type === 'file' && f.lang === 'html') return f;
+            }
+            return null;
+        }
+
+        function getOpenFilePath() {
+            if (!openFile) return '';
+            return getNodePath(openFile, fileTree);
+        }
+
+        function injectIntoHead(html, injection) {
+            const idx = html.toLowerCase().indexOf('<head>');
+            if (idx !== -1) return html.substring(0, idx + 6) + injection + html.substring(idx + 6);
+            return injection + html;
+        }
+
+        function injectBeforeBodyEnd(html, injection) {
+            if (html.toLowerCase().includes('</body>')) {
+                return html.replace(/<\/body>/i, `${injection}\n</body>`);
+            }
+            return html + injection;
+        }
+
+        // ============================== MAIN SANDBOX RUNNER ==============================
+        function runLiveSandbox() {
+            if (!openFile) return;
+            iframeLoader.classList.remove('hidden');
+            virtualConsole.innerHTML = '';
+
+            setTimeout(() => {
+                const activeLanguage = openFile.lang;
+                const editorValue = editingArea.value;
+                const filesMap = getAllFilesMap();
+                const openPath = getOpenFilePath();
+                let compiledSource = '';
+                let badge = activeLanguage;
+
+                if (activeLanguage === 'html') {
+                    badge = 'html · project preview';
+                    let resolved = inlineProjectAssets(editorValue, openPath, filesMap, 'html');
+                    resolved = injectIntoHead(resolved, CONSOLE_CATCH_SCRIPT);
+                    compiledSource = resolved;
+
+                } else if (CSS_LANGS.includes(activeLanguage)) {
+                    badge = activeLanguage === 'css' ? 'css · live preview' : `${activeLanguage} · preprocessed preview`;
+                    const entryHtml = findEntryHtmlFile(filesMap);
+                    let inlinedCss = toPlainCSS(editorValue, activeLanguage);
+                    inlinedCss = inlineProjectAssets(inlinedCss, openPath, filesMap, 'css');
+
+                    if (entryHtml) {
+                        let body = inlineProjectAssets(entryHtml.content || '', getNodePath(entryHtml, fileTree), filesMap, 'html');
+                        body = body.replace(/<link\b[^>]*rel=["']?stylesheet["']?[^>]*>/gi, '');
+                        const styleTag = `<style data-src="${escapeHTML(openPath)}">${inlinedCss}</style>`;
+                        body = injectIntoHead(body, styleTag + CONSOLE_CATCH_SCRIPT);
+                        compiledSource = body;
+                    } else {
+                        compiledSource = `
+                            <!DOCTYPE html>
+                            <html>
+                            <head><style>body{margin:0;background:#0D0F13;}${inlinedCss}</style></head>
+                            <body>
+                                <div class="glowing-element" style="width:140px;height:140px;border-radius:50px;background:radial-gradient(circle, #C5A059 0%, #16191E 100%);margin:40px auto;box-shadow:0 0 40px rgba(197,160,89,.4);"></div>
+                                <div style="font-family: 'Inter', sans-serif; text-align: center; margin-top: 20px; color: #6B727E; font-size: 11px;">No index.html in project — showing standalone style preview</div>
+                            </body>
+                            </html>
+                        `;
+                    }
+
+                } else if (SCRIPT_LANGS.includes(activeLanguage)) {
+                    badge = activeLanguage === 'javascript' ? 'javascript · sandbox' : `${activeLanguage} · babel transpiled`;
+                    const entryHtml = findEntryHtmlFile(filesMap);
+                    const transpiled = transpileScript(editorValue, activeLanguage);
+                    const needsReact = (activeLanguage === 'jsx' || activeLanguage === 'tsx');
+                    const reactCDN = `
+                        <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"><\/script>
+                        <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"><\/script>
+                    `;
+
+                    if (transpiled.error) {
+                        compiledSource = buildErrorSandbox(activeLanguage, transpiled.error, editorValue);
+                    } else if (entryHtml) {
+                        let body = inlineProjectAssets(entryHtml.content || '', getNodePath(entryHtml, fileTree), filesMap, 'html');
+                        let headInjection = CONSOLE_CATCH_SCRIPT;
+                        if (needsReact && !/react(\.development|\.production)?\.min\.js|react@/.test(body)) {
+                            headInjection = reactCDN + headInjection;
+                        }
+                        body = injectIntoHead(body, headInjection);
+                        const scriptTag = `<script>\n${transpiled.code}\n<\/script>`;
+                        body = injectBeforeBodyEnd(body, scriptTag);
+                        compiledSource = body;
+                    } else {
+                        compiledSource = `
+                            <!DOCTYPE html>
+                            <html>
+                            <head>
+                                ${needsReact ? reactCDN : ''}
+                                ${CONSOLE_CATCH_SCRIPT}
+                                <style>body{margin:0;background:#0D0F13;font-family:'Inter',sans-serif;}</style>
+                            </head>
+                            <body>
+                                <div style="font-family: 'JetBrains Mono', monospace; padding: 12px; font-size: 12px; color: #E1E4E8; background: #16191E; border-radius: 8px; border: 1px solid rgba(225,228,232,0.1);">
+                                    <div style="color: #C5A059; font-weight: bold; margin-bottom: 6px;">⚙️ ${activeLanguage.toUpperCase()} Execution Sandbox</div>
+                                    <div style="color: #6B727E;">Logs render live in the console below. ${needsReact ? 'React + ReactDOM are preloaded — render into #root.' : 'Add a root element to render UI here.'}</div>
+                                    <div id="root" style="margin-top:10px;"></div>
+                                    <div id="app" style="margin-top:10px;"></div>
+                                </div>
+                                <script>${transpiled.code}<\/script>
+                            </body>
+                            </html>
+                        `;
+                    }
+
+                } else if (activeLanguage === 'python') {
+                    badge = 'python · pyodide';
+                    compiledSource = buildPythonSandbox(editorValue);
+
+                } else if (activeLanguage === 'json') {
+                    badge = 'json · viewer';
+                    compiledSource = buildJsonSandbox(editorValue);
+
+                } else if (activeLanguage === 'yaml') {
+                    badge = 'yaml · viewer';
+                    compiledSource = buildYamlSandbox(editorValue);
+
+                } else if (activeLanguage === 'sql') {
+                    badge = 'sql · sqlite (in-browser)';
+                    compiledSource = buildSqlSandbox(editorValue);
+
+                } else if (activeLanguage === 'markup') {
+                    badge = 'markdown · rendered';
+                    compiledSource = buildMarkdownSandbox(editorValue);
+
+                } else if (activeLanguage === 'xml') {
+                    badge = 'xml · viewer';
+                    compiledSource = buildXmlSandbox(editorValue);
+
+                } else {
+                    // bash, c, cpp, java, go, rust, php, ruby, csharp, plaintext, etc.
+                    badge = `${activeLanguage} · source preview (not executable in-browser)`;
+                    compiledSource = buildGenericSourceSandbox(editorValue, activeLanguage, openFile.name);
+                }
+
+                document.getElementById('preview-mode-badge').textContent = badge;
+                liveIframe.srcdoc = compiledSource;
+                iframeLoader.classList.add('hidden');
+            }, 400);
+        }
+
+        // ---- Transpile / runtime error display ----
+        function buildErrorSandbox(lang, message, code) {
+            return `
+                <!DOCTYPE html>
+                <html>
+                <head><style>
+                    body { font-family: 'JetBrains Mono', monospace; padding: 16px; background: #0D0F13; color: #E1E4E8; font-size: 12px; margin:0; }
+                    .title { color: #C5A059; font-weight: bold; margin-bottom: 8px; }
+                    pre { white-space: pre-wrap; word-break: break-word; color: #C5A059; background:#16191E; padding:10px; border-radius:8px; }
+                </style></head>
+                <body>
+                    <div class="title">❌ ${lang.toUpperCase()} transpile error</div>
+                    <pre>${escapeHTML(message)}</pre>
+                </body>
+                </html>
+            `;
+        }
+
+        // ---- Python execution via Pyodide (WASM CPython in-browser) ----
+        function buildPythonSandbox(code) {
+            const escapedCode = JSON.stringify(code);
+            return `
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <style>
+                        body { font-family: 'JetBrains Mono', monospace; padding: 14px; font-size: 12px; color: #6B727E; background: #0D0F13; margin:0; }
+                        #status { color: #C5A059; font-weight: bold; margin-bottom: 8px; }
+                        #out { white-space: pre-wrap; color: #E1E4E8; }
+                        .err { color: #C5A059; }
+                    </style>
+                </head>
+                <body>
+                    <div id="status">🐍 Booting Python runtime (Pyodide)…</div>
+                    <div id="out"></div>
+                    ${CONSOLE_CATCH_SCRIPT}
+                    <script src="https://cdn.jsdelivr.net/pyodide/v0.24.1/full/pyodide.js"><\/script>
+                    <script>
+                        const statusEl = document.getElementById('status');
+                        const outEl = document.getElementById('out');
+
+                        async function main() {
+                            try {
+                                const pyodide = await loadPyodide();
+                                statusEl.textContent = '🐍 Running script…';
+
+                                pyodide.setStdout({ batched: (s) => {
+                                    outEl.textContent += s + "\\n";
+                                    console.log(s);
+                                }});
+                                pyodide.setStderr({ batched: (s) => {
+                                    outEl.innerHTML += '<span class="err">' + s.replace(/</g,'&lt;') + '</span>\\n';
+                                    console.error(s);
+                                }});
+
+                                const code = ${escapedCode};
+                                await pyodide.runPythonAsync(code);
+                                statusEl.textContent = '✅ Execution finished';
+                            } catch (err) {
+                                statusEl.textContent = '❌ Execution failed';
+                                outEl.innerHTML += '<span class="err">' + String(err).replace(/</g,'&lt;') + '</span>';
+                                console.error(String(err));
+                            }
+                        }
+                        main();
+                    <\/script>
+                </body>
+                </html>
+            `;
+        }
+
+        // ---- JSON pretty viewer ----
+        function buildJsonSandbox(code) {
+            let pretty = code;
+            let valid = true;
+            try { pretty = JSON.stringify(JSON.parse(code), null, 2); } catch (e) { valid = false; }
+            return `
+                <!DOCTYPE html>
+                <html>
+                <head><style>
+                    body { font-family: 'JetBrains Mono', monospace; padding: 16px; background: #0D0F13; color: #E1E4E8; font-size: 12px; margin:0; }
+                    .status { margin-bottom: 10px; font-weight: bold; color: ${valid ? '#E1E4E8' : '#C5A059'}; }
+                    pre { white-space: pre-wrap; word-break: break-all; }
+                </style></head>
+                <body>
+                    <div class="status">${valid ? '✅ Valid JSON' : '❌ Invalid JSON — showing raw content'}</div>
+                    <pre>${escapeHTML(pretty)}</pre>
+                </body>
+                </html>
+            `;
+        }
+
+        // ---- YAML viewer (parses with js-yaml, shows resulting structure) ----
+        function buildYamlSandbox(code) {
+            const escapedCode = JSON.stringify(code);
+            return `
+                <!DOCTYPE html>
+                <html>
+                <head><style>
+                    body { font-family: 'JetBrains Mono', monospace; padding: 16px; background: #0D0F13; color: #E1E4E8; font-size: 12px; margin:0; }
+                    .status { margin-bottom: 10px; font-weight: bold; }
+                    .ok { color: #E1E4E8; } .bad { color: #C5A059; }
+                    pre { white-space: pre-wrap; word-break: break-word; }
+                </style></head>
+                <body>
+                    <div id="status" class="status">Parsing YAML…</div>
+                    <pre id="out"></pre>
+                    <script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"><\/script>
+                    <script>
+                        const statusEl = document.getElementById('status');
+                        const outEl = document.getElementById('out');
+                        const src = ${escapedCode};
+                        try {
+                            const data = jsyaml.load(src);
+                            statusEl.textContent = '✅ Valid YAML — parsed structure:';
+                            statusEl.className = 'status ok';
+                            outEl.textContent = JSON.stringify(data, null, 2);
+                        } catch (err) {
+                            statusEl.textContent = '❌ YAML parse error';
+                            statusEl.className = 'status bad';
+                            outEl.textContent = String(err);
+                        }
+                    <\/script>
+                </body>
+                </html>
+            `;
+        }
+
+        // ---- SQL execution via sql.js (in-memory SQLite) ----
+        function buildSqlSandbox(code) {
+            const escapedCode = JSON.stringify(code);
+            return `
+                <!DOCTYPE html>
+                <html>
+                <head><style>
+                    body { font-family: 'JetBrains Mono', monospace; padding: 14px; background: #0D0F13; color: #E1E4E8; font-size: 12px; margin:0; }
+                    .status { color: #C5A059; font-weight: bold; margin-bottom: 10px; }
+                    table { border-collapse: collapse; margin-bottom: 16px; font-size: 11px; width: 100%; }
+                    th, td { border: 1px solid #16191E; padding: 4px 8px; text-align: left; }
+                    th { background: #16191E; color: #C5A059; }
+                    tr:nth-child(even) { background: #16191E; }
+                    .err { color: #C5A059; white-space: pre-wrap; }
+                    .meta { color: #6B727E; margin-bottom: 6px; }
+                </style></head>
+                <body>
+                    <div class="status">🗄️ Booting SQLite (sql.js)…</div>
+                    <div id="results"></div>
+                    ${CONSOLE_CATCH_SCRIPT}
+                    <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.2/sql-wasm.js"><\/script>
+                    <script>
+                        const resultsEl = document.getElementById('results');
+                        const statusEl = document.querySelector('.status');
+
+                        function renderTable(columns, values) {
+                            let html = '<table><thead><tr>' + columns.map(c => '<th>' + c + '</th>').join('') + '</tr></thead><tbody>';
+                            for (const row of values) {
+                                html += '<tr>' + row.map(v => '<td>' + (v === null ? '<i>NULL</i>' : String(v)) + '</td>').join('') + '</tr>';
+                            }
+                            html += '</tbody></table>';
+                            return html;
+                        }
+
+                        async function main() {
+                            try {
+                                const SQL = await initSqlJs({ locateFile: f => 'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.2/' + f });
+                                const db = new SQL.Database();
+                                statusEl.textContent = '✅ SQLite ready — executing script…';
+
+                                const sql = ${escapedCode};
+                                let resultSets = [];
+                                try {
+                                    resultSets = db.exec(sql);
+                                } catch (execErr) {
+                                    resultsEl.innerHTML += '<div class="err">' + String(execErr).replace(/</g,'&lt;') + '</div>';
+                                    console.error(String(execErr));
+                                }
+
+                                if (resultSets.length === 0) {
+                                    resultsEl.innerHTML += '<div class="meta">Query executed successfully — no result sets returned (e.g. CREATE/INSERT/UPDATE).</div>';
+                                    console.log('SQL executed — no SELECT result sets.');
+                                } else {
+                                    resultSets.forEach((rs, idx) => {
+                                        resultsEl.innerHTML += '<div class="meta">Result set ' + (idx+1) + ' (' + rs.values.length + ' rows)</div>' + renderTable(rs.columns, rs.values);
+                                        console.log('Result set ' + (idx+1) + ': ' + rs.values.length + ' rows');
+                                    });
+                                }
+                                statusEl.textContent = '✅ Execution finished';
+                            } catch (err) {
+                                statusEl.textContent = '❌ SQLite failed to load';
+                                resultsEl.innerHTML += '<div class="err">' + String(err).replace(/</g,'&lt;') + '</div>';
+                                console.error(String(err));
+                            }
+                        }
+                        main();
+                    <\/script>
+                </body>
+                </html>
+            `;
+        }
+
+        // ---- XML viewer ----
+        function buildXmlSandbox(code) {
+            const escapedCode = JSON.stringify(code);
+            return `
+                <!DOCTYPE html>
+                <html>
+                <head><style>
+                    body { font-family: 'JetBrains Mono', monospace; padding: 16px; background: #0D0F13; color: #E1E4E8; font-size: 12px; margin:0; }
+                    .status { margin-bottom: 10px; font-weight: bold; }
+                    .ok { color: #E1E4E8; } .bad { color: #C5A059; }
+                    pre { white-space: pre-wrap; word-break: break-word; }
+                </style></head>
+                <body>
+                    <div id="status" class="status">Parsing XML…</div>
+                    <pre id="out"></pre>
+                    <script>
+                        const src = ${escapedCode};
+                        const statusEl = document.getElementById('status');
+                        const outEl = document.getElementById('out');
+                        try {
+                            const parser = new DOMParser();
+                            const doc = parser.parseFromString(src, 'application/xml');
+                            const errNode = doc.querySelector('parsererror');
+                            if (errNode) {
+                                statusEl.textContent = '❌ XML parse error';
+                                statusEl.className = 'status bad';
+                                outEl.textContent = errNode.textContent;
+                            } else {
+                                statusEl.textContent = '✅ Valid XML';
+                                statusEl.className = 'status ok';
+                                outEl.textContent = src;
+                            }
+                        } catch (err) {
+                            statusEl.textContent = '❌ XML parse error';
+                            statusEl.className = 'status bad';
+                            outEl.textContent = String(err);
+                        }
+                    <\/script>
+                </body>
+                </html>
+            `;
+        }
+
+        // ---- Markdown renderer ----
+        function buildMarkdownSandbox(code) {
+            const markdownTextClean = code
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/```([\s\S]*?)```/g, (m, c) => `<pre style="background:#16191E;color:#E1E4E8;padding:10px;border-radius:8px;overflow:auto;">${c}</pre>`)
+                .replace(/\n/g, '<br>')
+                .replace(/# (.*)/g, '<h1 style="color: #C5A059; border-bottom: 1px solid rgba(225,228,232,0.15); padding-bottom: 4px; font-family: \'Inter\', sans-serif;">$1</h1>')
+                .replace(/## (.*)/g, '<h2 style="color: #E1E4E8; font-family: \'Inter\', sans-serif;">$1</h2>')
+                .replace(/### (.*)/g, '<h3 style="color: #C5A059; font-family: \'Inter\', sans-serif;">$1</h3>')
+                .replace(/\*\*(.*?)\*\*/g, '<strong style="color:#E1E4E8;">$1</strong>')
+                .replace(/- (.*)/g, '<li style="margin-left: 12px; font-family: \'Inter\', sans-serif; color: #6B727E;">$1</li>');
+
+            return `
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <style>body { padding: 20px; color: #E1E4E8; background: #0D0F13; line-height: 1.6; font-family: 'Inter', sans-serif; }</style>
+                </head>
+                <body>
+                    <div>${markdownTextClean}</div>
+                </body>
+                </html>
+            `;
+        }
+
+        // ---- Generic syntax-highlighted source preview for compiled / non-browser languages ----
+        const GENERIC_PRISM_COMPONENTS = {
+            bash: 'bash', c: 'c', cpp: 'cpp', java: 'java', go: 'go', rust: 'rust',
+            php: 'php', ruby: 'ruby', csharp: 'csharp', plaintext: null
+        };
+
+        function buildGenericSourceSandbox(code, lang, filename) {
+            const escapedCode = JSON.stringify(code);
+            const prismLang = PRISM_LANG_MAP[lang] || 'language-none';
+            const component = GENERIC_PRISM_COMPONENTS[lang];
+            const componentScript = component
+                ? `<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-${component}.min.js"><\/script>`
+                : '';
+
+            return `
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+                    <style>
+                        body { margin:0; padding: 14px; background: #0D0F13; font-family: 'JetBrains Mono', monospace; }
+                        .banner { color: #6B727E; font-size: 11px; margin-bottom: 10px; padding: 8px 10px; background: #16191E; border-radius: 8px; border: 1px solid rgba(225,228,232,0.08); }
+                        .banner b { color: #C5A059; }
+                        pre { margin: 0; border-radius: 8px; font-size: 12px; max-height: calc(100vh - 90px); overflow:auto; background:#16191E !important; }
+                        code[class*="language-"], pre[class*="language-"] { color: #E1E4E8 !important; text-shadow:none !important; font-family: 'JetBrains Mono', monospace !important; }
+                        .token.comment, .token.prolog, .token.doctype, .token.cdata, .token.punctuation { color: #6B727E !important; }
+                        .token.property, .token.tag, .token.boolean, .token.number, .token.constant, .token.symbol,
+                        .token.deleted, .token.function, .token.class-name, .token.selector, .token.attr-name,
+                        .token.keyword, .token.operator, .token.entity, .token.url, .token.variable, .token.builtin,
+                        .token.important, .token.atrule { color: #C5A059 !important; }
+                        .token.string, .token.char, .token.inserted, .token.regex { color: #E1E4E8 !important; }
+                    </style>
+                </head>
+                <body>
+                    <div class="banner"><b>${escapeHTML(filename)}</b> — ${lang} is not executed in-browser. Showing a syntax-highlighted source preview. Download the file to compile/run it locally.</div>
+                    <pre><code class="${prismLang}" id="code-block"></code></pre>
+                    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"><\/script>
+                    ${componentScript}
+                    <script>
+                        document.getElementById('code-block').textContent = ${escapedCode};
+                        if (window.Prism) Prism.highlightElement(document.getElementById('code-block'));
+                    <\/script>
+                </body>
+                </html>
+            `;
+        }
+
+        window.addEventListener('message', (event) => {
+            if (event.data && event.data.type === 'IFRAME_CONSOLE') {
+                if (virtualConsole.querySelector('.italic')) {
+                    virtualConsole.innerHTML = '';
+                }
+
+                const logItem = document.createElement('div');
+                const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+                logItem.className = 'py-0.5 border-b border-ink/10 flex items-start gap-2.5';
+
+                let textClass = 'text-ink';
+                let icon = '⚡';
+                if (event.data.logType === 'error') {
+                    textClass = 'text-accent';
+                    icon = '❌';
+                } else if (event.data.logType === 'warn') {
+                    textClass = 'text-accent';
+                    icon = '⚠️';
+                }
+
+                logItem.innerHTML = `
+                    <span class="text-muted shrink-0 select-none">${timeStr}</span>
+                    <span class="shrink-0">${icon}</span>
+                    <span class="${textClass} flex-1 font-semibold leading-relaxed whitespace-pre-wrap">${event.data.message}</span>
+                `;
+                virtualConsole.appendChild(logItem);
+                virtualConsole.scrollTop = virtualConsole.scrollHeight;
+            }
+        });
+
+        // ============================== TOASTS ==============================
+        function triggerToast(message, type = 'success') {
+            const toast = document.createElement('div');
+            toast.className = `p-3.5 rounded-xl text-xs font-semibold shadow-lg shadow-canvas/40 text-ink pointer-events-auto transition-all duration-300 transform translate-y-2 opacity-0 flex items-center gap-2 border bg-surface border-ink/10`;
+
+            if (type === 'success') {
+                toast.innerHTML = `<i class="fa-solid fa-circle-check text-base text-accent"></i> ${message}`;
+            } else {
+                toast.innerHTML = `<i class="fa-solid fa-circle-info text-base text-muted"></i> ${message}`;
+            }
+
+            toastContainer.appendChild(toast);
+
+            setTimeout(() => {
+                toast.classList.remove('translate-y-2', 'opacity-0');
+            }, 50);
+
+            setTimeout(() => {
+                toast.classList.add('opacity-0', 'scale-95');
+                setTimeout(() => {
+                    toast.remove();
+                }, 300);
+            }, 3000);
+        }
+
+        // ============================== TOOLBAR EVENTS ==============================
+        btnRun.addEventListener('click', () => {
+            runLiveSandbox();
+            triggerToast('Source compiled & executed inside Sandbox!', 'success');
+        });
+
+        btnRefreshPreview.addEventListener('click', () => {
+            runLiveSandbox();
+            triggerToast('Preview state reloaded.', 'info');
+        });
+
+        btnTogglePreview.addEventListener('click', () => {
+            previewPanel.classList.toggle('hidden');
+            triggerToast('Workspace panels adjusted', 'info');
+        });
+
+        btnDownload.addEventListener('click', () => {
+            if (!openFile) return;
+            const blob = new Blob([editingArea.value], { type: 'text/plain;charset=utf-8' });
+            const tempUrl = URL.createObjectURL(blob);
+            const downloadAnchor = document.createElement('a');
+
+            downloadAnchor.href = tempUrl;
+            downloadAnchor.download = openFile.name || 'code_aura.txt';
+            document.body.appendChild(downloadAnchor);
+            downloadAnchor.click();
+            document.body.removeChild(downloadAnchor);
+            URL.revokeObjectURL(tempUrl);
+            triggerToast('File download started successfully!', 'success');
+        });
+
+        btnCopy.addEventListener('click', () => {
+            const textareaCopy = document.createElement('textarea');
+            textareaCopy.value = editingArea.value;
+            document.body.appendChild(textareaCopy);
+            textareaCopy.select();
+            document.execCommand('copy');
+            document.body.removeChild(textareaCopy);
+            triggerToast('Source code copied to clipboard!', 'success');
+        });
+
+        btnToggleSidebar.addEventListener('click', () => {
+            fileSidebar.classList.add('-ml-64');
+            btnShowSidebar.classList.remove('hidden');
+        });
+
+        btnShowSidebar.addEventListener('click', () => {
+            fileSidebar.classList.remove('-ml-64');
+            btnShowSidebar.classList.add('hidden');
+        });
+
+        // Custom File Imports handler - adds files to current folder (root)
+        fileUploadInput.addEventListener('change', async (event) => {
+            const files = Array.from(event.target.files || []);
+            if (!files.length) return;
+
+            for (const file of files) {
+                await importFile(file);
+            }
+            fileUploadInput.value = '';
+        });
+
+        function importFile(file) {
+            return new Promise((resolve) => {
+                const reader = new FileReader();
+                reader.onload = async function (e) {
+                    let name = file.name;
+                    if (siblingNameExists(fileTree, name)) {
+                        name = `${Date.now()}_${name}`;
+                    }
+                    const newFile = makeFile(name, e.target.result);
+                    fileTree.children.push(newFile);
+                    renderFileTree();
+                    await saveTree();
+                    openFileInEditor(newFile);
+                    triggerToast(`Imported ${file.name} successfully!`, 'success');
+                    resolve();
+                };
+                reader.readAsText(file);
+            });
+        }
+
+        btnClearConsole.addEventListener('click', () => {
+            virtualConsole.innerHTML = '<div class="text-muted italic">Logs cleared. Press "Run Live" to evaluate script...</div>';
+            triggerToast('Sandbox terminal output cleared', 'info');
+        });
+
+        // ============================== SETTINGS ==============================
+        btnSettings.addEventListener('click', () => {
+            settingsDrawer.classList.remove('translate-x-full');
+        });
+
+        btnCloseSettings.addEventListener('click', () => {
+            settingsDrawer.classList.add('translate-x-full');
+        });
+
+        fontSizeControl.addEventListener('input', async (e) => {
+            editorFontSize = parseInt(e.target.value);
+            fontSizeDisplay.textContent = `${editorFontSize}px`;
+            await saveSetting('font_size', editorFontSize);
+            updateEditorProperties();
+        });
+
+        tabSizeControl.addEventListener('change', async (e) => {
+            tabSpaces = parseInt(e.target.value);
+            await saveSetting('tab_size', tabSpaces);
+            updateEditorProperties();
+            handleEditingSyntax();
+        });
+
+        toggleAutoclose.addEventListener('change', async (e) => {
+            autocloseEnabled = e.target.checked;
+            await saveSetting('autoclose', autocloseEnabled);
+            triggerToast(autocloseEnabled ? 'Bracket auto-closing enabled' : 'Bracket auto-closing disabled', 'info');
+        });
+
+        toggleAutosave.addEventListener('change', async (e) => {
+            autosaveEnabled = e.target.checked;
+            await saveSetting('autosave', autosaveEnabled);
+            triggerToast(autosaveEnabled ? 'Draft autosave enabled' : 'Draft autosave disabled', 'info');
+        });
+
+        btnResetPreferences.addEventListener('click', async () => {
+            const ok = await confirmDialog('Reset Preferences', 'Reset editor preferences (font size, tab size, theme, etc.) to defaults? Your projects and files will be kept.');
+            if (!ok) return;
+
+            for (const key of ['tab_size', 'font_size', 'autoclose', 'autosave']) {
+                await idbDelete('settings', key);
+            }
+
+            triggerToast('Preferences reset. Reloading...', 'info');
+            setTimeout(() => {
+                window.location.reload();
+            }, 800);
+        });
+
+        // ============================== DRAG & DROP ==============================
+        window.addEventListener('dragover', (e) => e.preventDefault());
+        window.addEventListener('drop', async (e) => {
+            e.preventDefault();
+            const files = Array.from(e.dataTransfer.files || []);
+            if (files.length > 0) {
+                for (const file of files) {
+                    await importFile(file);
+                }
+            }
+        });
+
+        // Safety net: flush any pending edits to IndexedDB before the page unloads,
+        // regardless of the autosave setting or debounce timer.
+        window.addEventListener('beforeunload', () => {
+            if (openFile) {
+                openFile.content = editingArea.value;
+            }
+            if (saveDebounceTimer) clearTimeout(saveDebounceTimer);
+            saveTree();
+        });
+
+        // ============================== INITIALIZATION ==============================
+        async function initApp() {
+            await openDB();
+
+            tabSpaces = await loadSetting('tab_size', 4);
+            tabSizeControl.value = tabSpaces.toString();
+
+            editorFontSize = await loadSetting('font_size', 14);
+            fontSizeControl.value = editorFontSize.toString();
+            fontSizeDisplay.textContent = `${editorFontSize}px`;
+
+            autocloseEnabled = await loadSetting('autoclose', true);
+            toggleAutoclose.checked = autocloseEnabled;
+
+            autosaveEnabled = await loadSetting('autosave', true);
+            toggleAutosave.checked = autosaveEnabled;
+
+            updateEditorProperties();
+            setupKeyboardHandlers();
+            setupSynchronizedScrolling();
+
+            await initProjects();
+        }
+
+        window.addEventListener('DOMContentLoaded', initApp);
+    </script>
+</body>
+</html>
