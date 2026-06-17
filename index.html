@@ -1761,8 +1761,12 @@
             return out;
         }
 
+        function stripCSSComments(code) {
+            return code.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+        }
+
         function preprocessSCSS(code) {
-            let css = code;
+            let css = stripCSSComments(code);
             const vars = {};
             css = css.replace(/\$([\w-]+)\s*:\s*([^;]+);/g, (m, name, val) => {
                 vars[name] = val.trim();
@@ -1778,7 +1782,7 @@
         }
 
         function preprocessLESS(code) {
-            let css = code;
+            let css = stripCSSComments(code);
             const vars = {};
             css = css.replace(/@([\w-]+)\s*:\s*([^;]+);/g, (m, name, val) => {
                 vars[name] = val.trim();
@@ -1791,6 +1795,7 @@
             return flattenNestedCSS(css);
         }
 
+
         // Convert any css-family source into plain CSS based on its language
         function toPlainCSS(content, lang) {
             if (lang === 'scss') return preprocessSCSS(content);
@@ -1800,7 +1805,15 @@
 
         // ============================== JS / TS / JSX / TSX TRANSPILATION (Babel standalone) ==============================
         function transpileScript(code, lang) {
-            if (lang === 'javascript') return { code, error: null };
+            if (lang === 'javascript') {
+                if (!window.Babel) return { code, error: null };
+                try {
+                    Babel.transform(code, { presets: [], filename: 'file.js', sourceType: 'module' });
+                    return { code, error: null };
+                } catch (err) {
+                    return { code: '', error: err.message || String(err) };
+                }
+            }
             if (!window.Babel) return { code, error: 'Babel not loaded — cannot transpile ' + lang };
             try {
                 const presets = [];
